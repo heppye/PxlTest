@@ -1,0 +1,2830 @@
+// -*- C++ -*-
+//
+// Package:  PxlTest
+// Class:    PxlTest
+//
+// my/PxlTest/src/PxlTest.cc
+//
+// Pixel (and strip) triplet residuals
+//
+// Original Author:  Daniel Pitzl, DESY
+//         Created:  Sat Feb 12 12:12:42 CET 2011
+// $Id$
+//
+
+// system include files:
+#include <memory>
+#include <iostream>
+#include <iomanip>
+#include <cmath>
+
+// ROOT:
+#include "TH1.h"
+#include "TH2.h"
+#include "TProfile.h"
+
+// CMS and user include files:
+#include "../interface/PxlTest.h"
+#include "CommonTools/UtilAlgos/interface/TFileService.h"
+#include "FWCore/ServiceRegistry/interface/Service.h"
+#include "FWCore/Framework/interface/EDAnalyzer.h"
+
+#include "FWCore/Framework/interface/Event.h"
+//#include <FWCore/Framework/interface/EventSetup.h>
+#include "FWCore/Framework/interface/MakerMacros.h"
+
+#include <DataFormats/BeamSpot/interface/BeamSpot.h>
+
+#include "DataFormats/VertexReco/interface/Vertex.h"
+#include "DataFormats/VertexReco/interface/VertexFwd.h"
+
+#include "DataFormats/METReco/interface/PFMET.h"
+#include "DataFormats/METReco/interface/PFMETFwd.h"
+
+#include "DataFormats/TrackReco/interface/Track.h"
+#include "DataFormats/TrackReco/interface/TrackExtra.h"
+#include "DataFormats/TrackReco/interface/TrackFwd.h"
+
+#include <DataFormats/TrackReco/interface/HitPattern.h>
+
+// To convert detId to subdet/layer number:
+#include "DataFormats/SiStripDetId/interface/StripSubdetector.h"
+#include "DataFormats/SiPixelDetId/interface/PixelSubdetector.h"
+#include "DataFormats/SiStripDetId/interface/TIBDetId.h"
+#include "DataFormats/SiStripDetId/interface/TOBDetId.h"
+#include "DataFormats/SiStripDetId/interface/TECDetId.h"
+#include "DataFormats/SiStripDetId/interface/TIDDetId.h"
+#include "DataFormats/SiPixelDetId/interface/PXBDetId.h"
+#include "DataFormats/SiPixelDetId/interface/PXFDetId.h"
+
+#include "DataFormats/TrackingRecHit/interface/TrackingRecHit.h"
+//#include "DataFormats/GeometryVector/interface/GlobalPoint.h"
+#include "DataFormats/TrackerRecHit2D/interface/SiPixelRecHit.h"
+#include "DataFormats/TrackerRecHit2D/interface/SiStripRecHit2D.h"
+#include "DataFormats/SiPixelCluster/interface/SiPixelCluster.h"
+
+#include "FWCore/Framework/interface/ESHandle.h"
+#include "Geometry/CommonDetUnit/interface/GeomDetUnit.h"
+#include "Geometry/TrackerGeometryBuilder/interface/TrackerGeometry.h"
+#include "Geometry/Records/interface/TrackerDigiGeometryRecord.h"
+#include "Geometry/CommonTopologies/interface/Topology.h"
+#include "Geometry/CommonTopologies/interface/PixelTopology.h"
+#include "Geometry/CommonTopologies/interface/StripTopology.h"
+
+#include "TrackingTools/TransientTrack/interface/TransientTrackBuilder.h"
+#include "TrackingTools/Records/interface/TransientTrackRecord.h"
+//#include "TrackingTools/TransientTrack/interface/TransientTrack.h"
+#include <TrackingTools/TrajectoryState/interface/FreeTrajectoryState.h>
+#include <MagneticField/Engine/interface/MagneticField.h>
+
+#include "TrackingTools/TransientTrackingRecHit/interface/TransientTrackingRecHitBuilder.h"
+#include "TrackingTools/TransientTrackingRecHit/interface/TransientTrackingRecHit.h"
+#include "TrackingTools/Records/interface/TransientRecHitRecord.h"
+
+#include "TrackingTools/PatternTools/interface/Trajectory.h"
+#include "TrackingTools/PatternTools/interface/TrajectoryBuilder.h"
+
+#include "TrackingTools/TrackFitters/interface/TrajectoryFitter.h"
+#include "TrackingTools/Records/interface/TransientRecHitRecord.h"
+#include "TrackingTools/Records/interface/TrackingComponentsRecord.h"
+#include "TrackingTools/TrackFitters/interface/TrajectoryStateCombiner.h"
+#include "TrackingTools/TrajectoryState/interface/TrajectoryStateTransform.h"
+
+#include "TrackingTools/DetLayers/interface/DetLayer.h"
+
+//#include "TrackingTools/GeomPropagators/interface/AnalyticalPropagator.h"
+
+#include "FWCore/Common/interface/TriggerNames.h"
+#include "DataFormats/Common/interface/TriggerResults.h"
+#include "HLTrigger/HLTcore/interface/HLTConfigProvider.h"
+#include "FWCore/Utilities/interface/RandomNumberGenerator.h"
+#include "CLHEP/Random/RandFlat.h"
+
+#include "CondFormats/SiPixelObjects/interface/SiPixelLorentzAngle.h"
+#include "CondFormats/DataRecord/interface/SiPixelLorentzAngleRcd.h"
+
+struct {
+	const char* name;
+	unsigned int prescale;
+}  SIM_TRIGGERS[] = {
+	{ "HLT_PFJet40_v", 30000 },
+	{ "HLT_PFJet80_v", 1000 },
+	{ "HLT_PFJet140_v", 120 },
+	{ "HLT_PFJet200_v", 25 },
+	{ "HLT_PFJet260_v", 5 },
+	{ "HLT_PFJet320_v", 1 },
+	{ "HLT_PFJet400_v", 1 },
+
+	{ "HLT_Jet370_NoJetID_v", 1 },
+
+	{ "HLT_DiPFJetAve40_v", 15000 },
+	{ "HLT_DiPFJetAve80_v", 1000 },
+	{ "HLT_DiPFJetAve140_v", 60 },
+	{ "HLT_DiPFJetAve200_v", 10 },
+	{ "HLT_DiPFJetAve260_v", 2 },
+	{ "HLT_DiPFJetAve320_v", 1 },
+	{ "HLT_DiPFJetAve400_v", 1 }
+};
+
+static const unsigned int N_SIM_TRIGGERS = sizeof(SIM_TRIGGERS)/sizeof(SIM_TRIGGERS[0]);
+
+//
+// class declaration:
+//
+class myCounters{
+public:
+  static int neve;
+  static unsigned int prevrun;
+};
+
+int myCounters::neve = 0;
+unsigned int myCounters::prevrun = 0;
+//
+//
+//
+//
+// static data member definitions:
+//
+
+//
+// constructor:
+//
+PxlTest::PxlTest(const edm::ParameterSet& iConfig)
+{
+  std::cout << "PxlTest constructed\n";
+  _triggerSrc = iConfig.getParameter<edm::InputTag>("triggerSource");
+  _ttrhBuilder = iConfig.getParameter<std::string>("ttrhBuilder");
+}
+//
+// destructor:
+//
+PxlTest::~PxlTest()
+{
+   // do anything here that needs to be done at desctruction time
+   // (e.g. close files, deallocate resources etc.)
+}
+//
+// member functions:
+// method called once each job just before starting event loop
+//
+void PxlTest::beginJob()
+{
+  edm::Service<TFileService> fs;
+
+//  h000 = fs->make<TH1D>( "h000", "#beta star;#beta star [cm]", 100, 0, 500 );
+//  h001 = fs->make<TH1D>( "h001", "emittance;emittance_{x} [cm]", 100, 0, 1e-5 );
+//  h002 = fs->make<TH1D>( "h002", "beam width x;beam width x [#mum]", 100, 0, 200 );
+//  h003 = fs->make<TH1D>( "h003", "beam width y;beam width y [#mum]", 100, 0, 200 );
+//  h004 = fs->make<TH1D>( "h004", "beam spot #sigma_{z};beam spot #sigma_{z} [cm]", 100, 0, 20 );
+//  h005 = fs->make<TH1D>( "h005", "beam spot x;beam spot x [cm]", 100, -1, 1 );
+//  h006 = fs->make<TH1D>( "h006", "beam spot y;beam spot y [cm]", 100, -1, 1 );
+//  h007 = fs->make<TH1D>( "h007", "beam spot z;beam spot z [cm]", 100, -5, 5 );
+//  h008 = fs->make<TH1D>( "h008", "beam slope dx/dz;beam slope dx/dz [mrad]", 100, -5, 5 );
+//  h009 = fs->make<TH1D>( "h009", "beam slope dy/dz;beam slope dy/dz [mrad]", 100, -5, 5 );
+//
+//  h010 = fs->make<TH1D>( "h010", "number of primary vertices;vertices;events", 31, -0.5, 30.5 );
+//  h011 = fs->make<TH1D>( "h011", "invalid z-vertex;z [cm]", 100, -50, 50 );
+//  h012 = fs->make<TH1D>( "h012", "fake z-vertex;z [cm]", 100, -50, 50 );
+//  h013 = fs->make<TH1D>( "h013", "non-fake z-vertex;z [cm]", 100, -50, 50 );
+//  h014 = fs->make<TH1D>( "h014", "vertex x;x [cm]", 100, -0.5, 0.5 );
+//  h015 = fs->make<TH1D>( "h015", "vertex y;y [cm]", 100, -0.5, 0.5 );
+//  h016 = fs->make<TH1D>( "h016", "tracks per vertex;tracks;vertices", 101, -0.5, 100.5 );
+//  h017 = fs->make<TH1D>( "h017", "tracks per vertex;tracks;vertices", 100, 5, 505 );
+//  h018 = fs->make<TH1D>( "h018", "z-vertex with refitted tracks;z [cm]", 100, -50, 50 );
+//  h019 = fs->make<TH1D>( "h019", "z-vertex without refitted tracks;z [cm]", 100, -50, 50 );
+//
+//  h021 = fs->make<TH1D>( "h021", "vertex sum p_{t};sum p_{t} [GeV]", 100, 0, 100 );
+//  h022 = fs->make<TH1D>( "h022", "vertex max sum p_{t};max sum p_{t} [GeV]", 100, 0, 100 );
+//
+//  h023 = fs->make<TH1D>( "h023", "best vertex x;x [cm]", 100, -0.25, 0.25 );
+//  h024 = fs->make<TH1D>( "h024", "best vertex y;y [cm]", 100, -0.25, 0.25 );
+//  h025 = fs->make<TH1D>( "h025", "best vertex z;z [cm]", 100, -25, 25 );
+//
+//  h026 = fs->make<TH1D>( "h026", "Sum Et;Sum Et [GeV]", 100, 0, 3000 );
+//  h027 = fs->make<TH1D>( "h027", "MET;MET [GeV]", 100, 0, 200 );
+//
+//  h028 = fs->make<TH1D>( "h028", "sum track p_{t};sum track P_{T} [GeV]", 100, 0, 500 );
+//  h029 = fs->make<TH1D>( "h029", "sum primary track charge;sum track charge", 41, -20.5, 20.5 );
+//
+//  h030 = fs->make<TH1D>( "h030", "number of tracks;tracks", 200, 0, 2000 );
+//  h031 = fs->make<TH1D>( "h031", "track charge;charge", 11, -5.5, 5.5 );
+//  h032 = fs->make<TH1D>( "h032", "p_{t};p_{t} [GeV]", 100, 0, 5 );
+//  h033 = fs->make<TH1D>( "h033", "p_{t} use logy, p_{t} [GeV]", 100, 0, 100 );
+//
+//  h034 = fs->make<TH1D>( "h034", "number of rec hits;hits;tracks", 41, -0.5, 40.5 );
+//  h035 = fs->make<TH1D>( "h035", "valid tracker hits;tracker hits;tracks", 41, -0.5, 40.5 );
+//  h036 = fs->make<TH1D>( "h036", "valid pixel barrel hits;valid pixel barrel hits;tracks", 7, -0.5, 6.5 );
+//  h037 = fs->make<TH1D>( "h037", "tracker layers;tracker layers;tracks", 31, -0.5, 30.5 );
+//  h038 = fs->make<TH1D>( "h038", "pixel barrel layers;pixel barrel layers;tracks", 6, -0.5, 5.5 );
+//
+//  h040 = fs->make<TH1D>( "h040", "b_{xy}, p_{t} > 8, PXB1;b_{xy} [#mum];tracks", 100, -250, 250 );
+//  h041 = fs->make<TH1D>( "h041", "#sigma(d_{xy}), p_{t} > 8, PXB1;#sigma(d_{xy}) [#mum];tracks", 100, 0, 100 );
+//  h042 = fs->make<TH1D>( "h042", "b_{xy}/#sigma, p_{t} > 8, PXB1;b_{xy}/#sigma;tracks", 100, -10, 10 );
+//
+//  h043 = fs->make<TProfile>( "h043", "#sigma(b_{xy}) vs logp_{t} with PXB1;log(p_{t} [GeV]);<#sigma(b_{xy})> [#mum]", 40, 0, 2, 0, 5000 );
+//  h044 = fs->make<TProfile>( "h044", "rms(b_{xy}) vs logp_{t} with PXB1;log(p_{t} [GeV]);rms(b_{xy}) [#mum]", 40, 0, 2, 0, 5000 );
+//  h045 = fs->make<TProfile>( "h045", "rms(b_{xy}/#sigma) vs logp_{t} with PXB1;log(p_{t} [GeV]);rms(b_{xy}/#sigma) [#mum]", 40, 0, 2, 0, 10 );
+//
+//  h049 = fs->make<TH2D>( "h049", "barrel pixels;col;row;hits", 416, -0.5, 415.5, 160, -0.5, 159.5 );
+//
+//  h051 = fs->make<TH1D>( "h051", "kap-kap;#Delta#kappa;tracks", 100, -0.01, 0.01 );
+//  h052 = fs->make<TH1D>( "h052", "phi-phi;#Delta#phi [rad];tracks", 100, -0.1, 0.1 );
+//  h053 = fs->make<TH1D>( "h053", "dca-dca;#Deltadca [cm];tracks", 100, -0.1, 0.1 );
+//  h054 = fs->make<TH1D>( "h054", "dip-dip;#Deltadip;tracks", 100, -0.1, 0.1 );
+//  h055 = fs->make<TH1D>( "h055", "z0-z0;#Deltaz_{0};tracks", 100, -0.1, 0.1 );
+//
+//  h057 = fs->make<TH1D>( "h057", "tscp ref x;x [cm];hits", 100, -1, 1 );
+//  h058 = fs->make<TH1D>( "h058", "tscp ref y;y [cm];hits", 100, -1, 1 );
+//  h059 = fs->make<TH1D>( "h059", "tscp ref z;z [cm];hits", 100, -10, 10 );
+//
+//  h060 = fs->make<TH1D>( "h060", "rec hit tracker subdet;subdet ID;tracks", 11, -0.5, 10.5 );
+//  h061 = fs->make<TH1D>( "h061", "rec hits local x;x [cm];hits", 120, -6, 6 );
+//  h062 = fs->make<TH1D>( "h062", "rec hits local y;y [cm];hits",  80, -4, 4 );
+//
+//  h063 = fs->make<TH1D>( "h063", "rec hits global R;R [cm];hits", 120, 0, 120 );
+//  h064 = fs->make<TH1D>( "h064", "rec hits global phi;#phi [deg];hits", 180, -180, 180 );
+//  h065 = fs->make<TH1D>( "h065", "rec hits global z;z [cm];hits", 300, -300, 300 );
+//
+//  h066 = fs->make<TH2D>( "h066", "rec hits barrel x-y;x [cm];y [cm]", 240, -120, 120, 240, -120, 120 );
+//
+//  h067 = fs->make<TH1D>( "h067", "PXB row;PXB row;hits", 160, -0.5, 159.5 );
+//  h068 = fs->make<TH1D>( "h068", "PXB row;PXB row;ADC [ke]", 160, -0.5, 159.5 );
+//
+//  h070 = fs->make<TH1D>( "h070", "PXB cluster charge;PXB cluster charge [ke];hits", 100, 0, 200 );
+//  h071 = fs->make<TH1D>( "h071", "PXB cluster charge*cos(dip);PXB cluster charge*cos(dip) [ke];hits", 100, 0, 100 );
+//  h072 = fs->make<TH1D>( "h072", "PXB cluster cols;PXB cluster cols;hits", 31, -0.5, 30.5 );
+//  h073 = fs->make<TH1D>( "h073", "PXB cluster rows;PXB cluster rows;hits", 21, -0.5, 20.5 );
+//  h074 = fs->make<TProfile>( "h074", "PXB cluster cols vs dip;dip angle [deg];<PXB cluster cols>", 80, -80, 80, 0, 30 );
+//  h075 = fs->make<TProfile>( "h075", "PXB cluster rows vs dip;dip angle [deg];<PXB cluster rows>", 80, -80, 80, 0, 10 );
+//  h076 = fs->make<TH1D>( "h076", "PXB cluster etaX;PXB cluster etaX;hits", 100, -1, 1 );
+//
+//  h080 = fs->make<TH1D>( "h080", "PXB x in pixel;x in pixel [#mum];hits", 100, 00, 100 );
+//  h081 = fs->make<TH1D>( "h081", "PXB x in pixel, =2 rows;x in pixel [#mum];hits", 100, 0, 100 );
+//  h082 = fs->make<TH1D>( "h082", "PXB x in pixel <>2 rows;x in pixel [#mum];hits", 100, 0, 100 );
+//  h083 = fs->make<TProfile>( "h083", "PXB eta vs x in pixel;x in pixel [#mum];<eta x>", 100, 0, 100, -2, 2 );
+//  h084 = fs->make<TProfile>( "h084", "PXB eta vs x in pixel outward;x in pixel [#mum];<eta x>", 100, 0, 100, -2, 2 );
+//  h085 = fs->make<TProfile>( "h085", "PXB eta vs x in pixel inward ;x in pixel [#mum];<eta x>", 100, 0, 100, -2, 2 );
+//
+//  h086 = fs->make<TH1D>( "h086", "PXB x_{loc}, row = 1;x_{loc} [cm];hits", 164, -0.82, 0.82 );
+//  h087 = fs->make<TH1D>( "h087", "PXB x_{loc}, row = 2;x_{loc} [cm];hits", 164, -0.82, 0.82 );
+//
+//  h100 = fs->make<TH1D>( "h100", "hits on tracks PXB layer;PXB layer;hits", 6, -0.5, 5.5 );
+//
+//  h101 = fs->make<TH1D>( "h101", "hits on tracks PXB1 ladder;ladder;hits", 22, -0.5, 21.5 );
+//  h102 = fs->make<TH1D>( "h102", "hits on tracks PXB1 module;module;hits", 10, -0.5, 9.5 );
+//  h103 = fs->make<TH1D>( "h103", "hits on tracks PXB1 R;R [cm];hits", 150, 0, 15 );
+//  h104 = fs->make<TH1D>( "h104", "hits on tracks PXB1 #phi;#phi [deg];hits", 180, -180, 180 );
+//  h105 = fs->make<TH1D>( "h105", "hits on tracks PXB1 z;z [cm];hits", 600, -30, 30 );
+//  h106 = fs->make<TH2D>( "h106", "hits on tracks PXB1 #phi-z;#phi [deg];z [cm]", 180, -180, 180, 600, -30, 30 );
+//  h107 = fs->make<TH2D>( "h107", "hits local x-y PXB1;x [cm];y [cm]", 180, -0.9, 0.9, 440, -3.3, 3.3 );
+//
+//  h111 = fs->make<TH2D>( "h111", "hits on tracks PXB1 x-y;x [cm];y [cm]", 240, -6, 6, 240, -6, 6 );
+//  h112 = fs->make<TH1D>( "h112", "residuals PXB1 #DeltaU;#DeltaU [#mum];hits", 100, -250, 250 );
+//  h113 = fs->make<TH1D>( "h113", "residuals PXB1 #Deltaz;#Deltaz [#mum];hits", 100, -250, 250 );
+//  h114 = fs->make<TH1D>( "h114", "residuals PXB1 #DeltaU;#DeltaU [#mum];hits", 100, -50, 50 );
+//  h115 = fs->make<TH1D>( "h115", "residuals PXB1 #Deltaz;#Deltaz [#mum];hits", 100, -250, 250 );
+//
+//  h121 = fs->make<TProfile>( "h121", "rms(b_{xy}) vs x_{loc} PXB1, p_{t} > 8;x(PXB1) [cm];rms(b_{xy}) [#mum]", 160, -0.8, 0.8, 0, 5000 );
+//
+//  h122 = fs->make<TProfile>( "h122", "rms(b_{xy}) vs x_{loc} PXB1, 0.8 < p_{t} < 1.2;x(PXB1) [cm];rms(b_{xy}) [#mum]", 160, -0.8, 0.8, 0, 5000 );
+//  h123 = fs->make<TProfile>( "h123", "#sigma(b_{xy}) vs x_{loc} PXB1, 0.8 < p_{t} < 1.2;x(PXB1) [cm];#sigma(b_{xy}) [#mum]", 160, -0.8, 0.8, 0, 5000 );
+//  h124 = fs->make<TProfile>( "h124", "rms(b_{xy}/#sigma) vs x_{loc} PXB1, 0.8 < p_{t} < 1.2;x(PXB1) [cm];rms(b_{xy}/#sigma)", 160, -0.8, 0.8, 0, 10 );
+//
+//  h125 = fs->make<TProfile>( "h125", "rms(b_{xy}) vs x_{loc} PXB1, 1.2 < p_{t} < 1.6;x(PXB1) [cm];rms(b_{xy}) [#mum]", 160, -0.8, 0.8, 0, 5000 );
+//  h126 = fs->make<TProfile>( "h126", "#sigma(b_{xy}) vs x_{loc} PXB1, 1.2 < p_{t} < 1.6;x(PXB1) [cm];#sigma(b_{xy}) [#mum]", 160, -0.8, 0.8, 0, 5000 );
+//  h127 = fs->make<TProfile>( "h127", "rms(b_{xy}/#sigma) vs x_{loc} PXB1, 1.2 < p_{t} < 1.6;x(PXB1) [cm];rms(b_{xy}/#sigma)", 160, -0.8, 0.8, 0, 10 );
+//
+//  h128 = fs->make<TProfile>( "h128", "rms(b_{xy}) vs x_{loc} PXB1, 1.6 < p_{t} < 2.2;x(PXB1) [cm];rms(b_{xy}) [#mum]", 160, -0.8, 0.8, 0, 5000 );
+//  h129 = fs->make<TProfile>( "h129", "#sigma(b_{xy}) vs x_{loc} PXB1, 1.6 < p_{t} < 2.2;x(PXB1) [cm];#sigma(b_{xy}) [#mum]", 160, -0.8, 0.8, 0, 5000 );
+//  h130 = fs->make<TProfile>( "h130", "rms(b_{xy}/#sigma) vs x_{loc} PXB1, 1.6 < p_{t} < 2.2;x(PXB1) [cm];rms(b_{xy}/#sigma)", 160, -0.8, 0.8, 0, 10 );
+//
+//  h131 = fs->make<TProfile>( "h131", "rms(b_{xy}) vs x_{loc} PXB1, 2.2 < p_{t} < 4.0;x(PXB1) [cm];rms(b_{xy}) [#mum]", 160, -0.8, 0.8, 0, 5000 );
+//  h132 = fs->make<TProfile>( "h132", "#sigma(b_{xy}) vs x_{loc} PXB1, 2.2 < p_{t} < 4.0;x(PXB1) [cm];#sigma(b_{xy}) [#mum]", 160, -0.8, 0.8, 0, 5000 );
+//  h133 = fs->make<TProfile>( "h133", "rms(b_{xy}/#sigma) vs x_{loc} PXB1, 2.2 < p_{t} < 4.0;x(PXB1) [cm];rms(b_{xy}/#sigma)", 160, -0.8, 0.8, 0, 10 );
+//
+//  h134 = fs->make<TProfile>( "h134", "rms(b_{xy}) vs x_{loc} PXB1, 4 < p_{t} < 10;x(PXB1) [cm];rms(b_{xy}) [#mum]", 160, -0.8, 0.8, 0, 5000 );
+//  h135 = fs->make<TProfile>( "h135", "#sigma(b_{xy}) vs x_{loc} PXB1, 4 < p_{t} < 10;x(PXB1) [cm];#sigma(b_{xy}) [#mum]", 160, -0.8, 0.8, 0, 5000 );
+//  h136 = fs->make<TProfile>( "h136", "rms(b_{xy}/#sigma) vs x_{loc} PXB1, 4 < p_{t} < 10;x(PXB1) [cm];rms(b_{xy}/#sigma)", 160, -0.8, 0.8, 0, 10 );
+//
+//  h137 = fs->make<TProfile>( "h137", "rms(b_{xy}) vs x_{loc} PXB1, p_{t} > 10;x(PXB1) [cm];rms(b_{xy}) [#mum]", 160, -0.8, 0.8, 0, 5000 );
+//  h138 = fs->make<TProfile>( "h138", "#sigma(b_{xy}) vs x_{loc} PXB1, p_{t} > 10;x(PXB1) [cm];#sigma(b_{xy}) [#mum]", 160, -0.8, 0.8, 0, 5000 );
+//  h139 = fs->make<TProfile>( "h139", "rms(b_{xy}/#sigma) vs x_{loc} PXB1, p_{t} > 10;x(PXB1) [cm];rms(b_{xy}/#sigma)", 160, -0.8, 0.8, 0, 10 );
+//
+//  h201 = fs->make<TH1D>( "h201", "hits on tracks PXB2 ladder;ladder;hits", 34, -0.5, 33.5 );
+//  h202 = fs->make<TH1D>( "h202", "hits on tracks PXB2 module;module;hits", 10, -0.5, 9.5 );
+//  h203 = fs->make<TH1D>( "h203", "hits on tracks PXB2 R;R [cm];hits", 150, 0, 15 );
+//  h204 = fs->make<TH1D>( "h204", "hits on tracks PXB2 #phi;#phi [deg];hits", 180, -180, 180 );
+//  h205 = fs->make<TH1D>( "h205", "hits on tracks PXB2 z;z [cm];hits", 600, -30, 30 );
+//  h206 = fs->make<TH2D>( "h206", "hits on tracks PXB2 #phi-z;#phi [deg];z [cm]", 180, -180, 180, 600, -30, 30 );
+//  h207 = fs->make<TH2D>( "h207", "hits local x-y PXB2;x [cm];y [cm]", 180, -0.9, 0.9, 440, -3.3, 3.3 );
+//
+//  // PXB2 triplet residuals:
+//
+//  h210 = fs->make<TProfile>( "h210", "PXB2 #sigma_{x} vs x_{loc}, 0.8-1.2 GeV;x_{loc} [cm];PXB2 rms(#Deltax) [#mum]", 160, -0.8, 0.8, 0, 499 );
+//  h211 = fs->make<TProfile>( "h211", "PXB2 #sigma_{x} vs x_{loc}, 1.2-1.6 GeV;x_{loc} [cm];PXB2 rms(#Deltax) [#mum]", 160, -0.8, 0.8, 0, 499 );
+//  h212 = fs->make<TProfile>( "h212", "PXB2 #sigma_{x} vs x_{loc}, 1.6-2.2 GeV;x_{loc} [cm];PXB2 rms(#Deltax) [#mum]", 160, -0.8, 0.8, 0, 499 );
+//  h213 = fs->make<TProfile>( "h213", "PXB2 #sigma_{x} vs x_{loc}, 2.2-4.0 GeV;x_{loc} [cm];PXB2 rms(#Deltax) [#mum]", 160, -0.8, 0.8, 0, 499 );
+//  h214 = fs->make<TProfile>( "h214", "PXB2 #sigma_{x} vs x_{loc}, p_{t} > 4 GeV ;x_{loc} [cm];PXB2 rms(#Deltax) [#mum]", 160, -0.8, 0.8, 0, 499 );
+//
+//  h215 = fs->make<TProfile>( "h215", "PXB2 #sigma_{x} vs z_{loc}, 0.8-1.2 GeV;z_{loc} [cm];PXB2 rms(#Deltax) [#mum]", 432, -3.24, 3.24, 0, 499 );
+//  h216 = fs->make<TProfile>( "h216", "PXB2 #sigma_{x} vs z_{loc}, 0.8-1.2 GeV;z_{loc} [cm];PXB2 rms(#Deltax) [#mum]", 432, -3.24, 3.24, 0, 499 );
+//  h217 = fs->make<TProfile>( "h217", "PXB2 #sigma_{x} vs z_{loc}, 0.8-1.2 GeV;z_{loc} [cm];PXB2 rms(#Deltax) [#mum]", 432, -3.24, 3.24, 0, 499 );
+//  h218 = fs->make<TProfile>( "h218", "PXB2 #sigma_{x} vs z_{loc}, 0.8-1.2 GeV;z_{loc} [cm];PXB2 rms(#Deltax) [#mum]", 432, -3.24, 3.24, 0, 499 );
+//  h219 = fs->make<TProfile>( "h219", "PXB2 #sigma_{x} vs z_{loc}, 0.8-1.2 GeV;z_{loc} [cm];PXB2 rms(#Deltax) [#mum]", 432, -3.24, 3.24, 0, 499 );
+//
+//  h220 = fs->make<TProfile>( "h220", "PXB2 #sigma_{x} vs z_{loc}, 0.8-1.2 GeV;z_{loc} [cm];PXB2 rms(#Deltax) [#mum]", 432, -3.24, 3.24, 0, 499 );
+//  h221 = fs->make<TProfile>( "h221", "PXB2 #sigma_{x} vs z_{loc}, 1.2-1.6 GeV;z_{loc} [cm];PXB2 rms(#Deltax) [#mum]", 432, -3.24, 3.24, 0, 499 );
+//  h222 = fs->make<TProfile>( "h222", "PXB2 #sigma_{x} vs z_{loc}, 1.6-2.2 GeV;z_{loc} [cm];PXB2 rms(#Deltax) [#mum]", 432, -3.24, 3.24, 0, 499 );
+//  h223 = fs->make<TProfile>( "h223", "PXB2 #sigma_{x} vs z_{loc}, 2.2-4.0 GeV;z_{loc} [cm];PXB2 rms(#Deltax) [#mum]", 432, -3.24, 3.24, 0, 499 );
+//  h224 = fs->make<TProfile>( "h224", "PXB2 #sigma_{x} vs z_{loc}, p_{t} > 4 GeV ;z_{loc} [cm];PXB2 rms(#Deltax) [#mum]", 432, -3.24, 3.24, 0, 499 );
+//
+//  h225 = fs->make<TProfile>( "h225", "PXB2 #sigma_{x} vs z_{loc}, 0.8-1.2 GeV;z_{loc} [cm];PXB2 rms(#Deltax) [#mum]", 432, -3.24, 3.24, 0, 499 );
+//  h226 = fs->make<TProfile>( "h226", "PXB2 #sigma_{x} vs z_{loc}, 0.8-1.2 GeV;z_{loc} [cm];PXB2 rms(#Deltax) [#mum]", 432, -3.24, 3.24, 0, 499 );
+//
+//  h227 = fs->make<TH1D>( "h227", "PXB2 x_{pix}, nrow = 1;x_{cluster} mod 100 [#mum];hits", 100, 0, 100 );
+//  h228 = fs->make<TH1D>( "h228", "PXB2 x_{pix}, nrow = 2;x_{cluster} mod 100 [#mum];hits", 100, 0, 100 );
+//  h229 = fs->make<TH1D>( "h229", "PXB2 x_{pix}, nrow = 3;x_{cluster} mod 100 [#mum];hits", 100, 0, 100 );
+//
+//  h230 = fs->make<TProfile>( "h230", "PXB2 #sigma_{z} vs z_{loc}, 0.8-1.2 GeV;z_{loc} [cm];PXB2 rms(#Deltaz) [#mum]", 432, -3.24, 3.24, 0, 499 );
+//  h231 = fs->make<TProfile>( "h231", "PXB2 #sigma_{z} vs z_{loc}, 1.2-1.6 GeV;z_{loc} [cm];PXB2 rms(#Deltaz) [#mum]", 432, -3.24, 3.24, 0, 499 );
+//  h232 = fs->make<TProfile>( "h232", "PXB2 #sigma_{z} vs z_{loc}, 1.6-2.2 GeV;z_{loc} [cm];PXB2 rms(#Deltaz) [#mum]", 432, -3.24, 3.24, 0, 499 );
+//  h233 = fs->make<TProfile>( "h233", "PXB2 #sigma_{z} vs z_{loc}, 2.2-4.0 GeV;z_{loc} [cm];PXB2 rms(#Deltaz) [#mum]", 432, -3.24, 3.24, 0, 499 );
+//  h234 = fs->make<TProfile>( "h234", "PXB2 #sigma_{z} vs z_{loc}, p_{t} > 4 GeV ;z_{loc} [cm];PXB2 rms(#Deltaz) [#mum]", 432, -3.24, 3.24, 0, 499 );
+//
+//  h235 = fs->make<TH1D>( "h235", "PXB2 x_{pix};x_{cluster} mod 100 [#mum];hits", 100, 0, 100 );
+//  h236 = fs->make<TH1D>( "h236", "PXB2 v_{pix};v_{pix} [#mum];hits", 100, 0, 100 );
+//  h237 = fs->make<TH1D>( "h237", "PXB2 v_{pix}, nrow = 1;v_{pix} [#mum];hits", 100, 0, 100 );
+//  h238 = fs->make<TH1D>( "h238", "PXB2 v_{pix}, nrow = 2;v_{pix} [#mum];hits", 100, 0, 100 );
+//  h239 = fs->make<TH1D>( "h239", "PXB2 v_{pix}, nrow = 3;v_{pix} [#mum];hits", 100, 0, 100 );
+//
+//  h240 = fs->make<TProfile>( "h240", "PXB2 rows vs t_{pix};x_{track} mod 200 [#mum];PXB2 <rows>", 100, 0, 200, 0, 10 );
+//  h241 = fs->make<TProfile>( "h241", "PXB2 #Deltax vs x_{pix};x_{cluster} mod 100 [#mum];<PXB2 #Deltax> [#mum]", 100, 0, 100, -99, 99 );
+//  h242 = fs->make<TProfile>( "h242", "PXB2 #sigma_{x} vs x_{pix};x_{cluster} mod 200 [#mum];PXB2 rms(#Deltax) [#mum]", 100, 0, 200, 0, 99 );
+//  h243 = fs->make<TProfile>( "h243", "PXB2 #Deltax vs l_{pix};x_{track} mod 100 [#mum];<PXB2 #Deltax> [#mum]", 100, 0, 100, -99, 99 );
+//  h244 = fs->make<TProfile>( "h244", "PXB2 #sigma_{x} vs t_{pix};x_{track} mod 200 [#mum];PXB2 rms(#Deltax) [#mum]", 100, 0, 200, 0, 99 );
+//
+//  h245 = fs->make<TProfile>( "h245", "PXB2 eta vs t_{pix};x_{track} mod 200 [#mum];PXB2 <eta>", 100, 0, 200, -2, 2 );
+//  h246 = fs->make<TProfile>( "h246", "PXB2 eta vs t_{pix} outward;x_{track} mod 200 [#mum];PXB2 <eta>", 100, 0, 200, -2, 2 );
+//  h247 = fs->make<TProfile>( "h247", "PXB2 eta vs t_{pix} inward ;x_{track} mod 200 [#mum];PXB2 <eta>", 100, 0, 200, -2, 2 );
+//  h248 = fs->make<TProfile>( "h248", "PXB2 eta vs x_{pix};x_{cluster} mod 200 [#mum];PXB2 <eta>", 100, 0, 200, -2, 2 );
+//
+//  h249 = fs->make<TH1D>( "h249", "PXB cluster etaX;PXB cluster etaX;hits", 100, -1, 1 );
+//  h250 = fs->make<TH1D>( "h250", "PXB cluster etaX;PXB cluster etaX;hits", 100, -1, 1 );
+//  h251 = fs->make<TH1D>( "h251", "PXB cluster etaX;PXB cluster etaX;hits", 100, -1, 1 );
+//  h252 = fs->make<TH1D>( "h252", "PXB cluster etaX;PXB cluster etaX;hits", 100, -1, 1 );
+//  h253 = fs->make<TH1D>( "h253", "PXB cluster etaX;PXB cluster etaX;hits", 100, -1, 1 );
+//  h254 = fs->make<TH1D>( "h254", "PXB cluster etaX;PXB cluster etaX;hits", 100, -1, 1 );
+//  h255 = fs->make<TH1D>( "h255", "PXB cluster etaX;PXB cluster etaX;hits", 100, -1, 1 );
+//  h256 = fs->make<TH1D>( "h256", "PXB cluster etaX;PXB cluster etaX;hits", 100, -1, 1 );
+//  h257 = fs->make<TH1D>( "h257", "PXB cluster etaX;PXB cluster etaX;hits", 100, -1, 1 );
+//  h258 = fs->make<TH1D>( "h258", "PXB cluster etaX;PXB cluster etaX;hits", 100, -1, 1 );
+//  h259 = fs->make<TH1D>( "h259", "PXB cluster etaX;PXB cluster etaX;hits", 100, -1, 1 );
+//
+//  h260 = fs->make<TH1D>( "h260", "PXB inc ang;inc ang [deg];hits", 80, -20, 20 );
+//  h261 = fs->make<TProfile>( "h261", "PXB2 eta vs t_{pix},       inc < -10;x_{track} mod 200 [#mum];PXB2 <eta>", 100, 0, 200, -2, 2 );
+//  h262 = fs->make<TProfile>( "h262", "PXB2 eta vs t_{pix}, -10 < inc <  -5;x_{track} mod 200 [#mum];PXB2 <eta>", 100, 0, 200, -2, 2 );
+//  h263 = fs->make<TProfile>( "h263", "PXB2 eta vs t_{pix},  -5 < inc <   0;x_{track} mod 200 [#mum];PXB2 <eta>", 100, 0, 200, -2, 2 );
+//  h264 = fs->make<TProfile>( "h264", "PXB2 eta vs t_{pix},   0 < inc <   5;x_{track} mod 200 [#mum];PXB2 <eta>", 100, 0, 200, -2, 2 );
+//  h265 = fs->make<TProfile>( "h265", "PXB2 eta vs t_{pix},   5 < inc <  10;x_{track} mod 200 [#mum];PXB2 <eta>", 100, 0, 200, -2, 2 );
+//  h266 = fs->make<TProfile>( "h266", "PXB2 eta vs t_{pix},  10 < inc      ;x_{track} mod 200 [#mum];PXB2 <eta>", 100, 0, 200, -2, 2 );
+//
+//  h267 = fs->make<TProfile>( "h267", "PXB2 #sigma_{x} vs t_{pix};x_{track} mod 200 [#mum];PXB2 rms(#Deltax) [#mum]", 100, 0, 200, 0, 99 );
+//  h268 = fs->make<TProfile>( "h268", "PXB2 #sigma_{x} vs l_{pix};x_{track} mod 100 [#mum];PXB2 rms(#Deltax) [#mum]", 100, 0, 100, 0, 99 );
+//
+//  h269 = fs->make<TH1D>( "h269", "PXB cluster etaX;PXB cluster etaX;hits", 100, -1, 1 );
+//  h270 = fs->make<TH1D>( "h270", "PXB cluster etaX;PXB cluster etaX;hits", 100, -1, 1 );
+//  h271 = fs->make<TH1D>( "h271", "PXB cluster etaX;PXB cluster etaX;hits", 100, -1, 1 );
+//  h272 = fs->make<TH1D>( "h272", "PXB cluster etaX;PXB cluster etaX;hits", 100, -1, 1 );
+//  h273 = fs->make<TH1D>( "h273", "PXB cluster etaX;PXB cluster etaX;hits", 100, -1, 1 );
+//  h274 = fs->make<TH1D>( "h274", "PXB cluster etaX;PXB cluster etaX;hits", 100, -1, 1 );
+//  h275 = fs->make<TH1D>( "h275", "PXB cluster etaX;PXB cluster etaX;hits", 100, -1, 1 );
+//  h276 = fs->make<TH1D>( "h276", "PXB cluster etaX;PXB cluster etaX;hits", 100, -1, 1 );
+//  h277 = fs->make<TH1D>( "h277", "PXB cluster etaX;PXB cluster etaX;hits", 100, -1, 1 );
+//  h278 = fs->make<TH1D>( "h278", "PXB cluster etaX;PXB cluster etaX;hits", 100, -1, 1 );
+//  h279 = fs->make<TH1D>( "h279", "PXB cluster etaX;PXB cluster etaX;hits", 100, -1, 1 );
+//
+//  h280 = fs->make<TH1D>( "h280", "PXB2 x_{pix}, eta < -0.3;x_{cluster} mod 100 [#mum];hits", 100, 0, 100 );
+//  h281 = fs->make<TH1D>( "h281", "PXB2 x_{pix}, -0.3 eta < 0.3;x_{cluster} mod 100 [#mum];hits", 100, 0, 100 );
+//  h282 = fs->make<TH1D>( "h282", "PXB2 x_{pix}, eta > 0.3;x_{cluster} mod 100 [#mum];hits", 100, 0, 100 );
+//
+//  h283 = fs->make<TProfile>( "h283", "PXB2 x_{com} vs t_{pix}, p_{t} > 4 GeV ;x_{track} mod 200 [#mum];PXB2 rms(x_{com}-xtrp) [#mum]", 100, 0, 200, 0, 499 );
+//  h284 = fs->make<TH1D>( "h284", "PXB2 residuals dcx, p_{t} > 12;PXB2 dcx [#mum];hits", 100, -150, 150 );
+//
+//  h285 = fs->make<TH1D>( "h285", "PXB2 m_{pix};m_{pix} [#mum];hits", 100, 0, 100 );
+//  h286 = fs->make<TProfile>( "h286", "PXB2 x_{my} vs x_{loc}, p_{t} > 4 GeV ;x_{loc} [cm];PXB2 <x_{my}-x_{loc}> [#mum]", 160, -0.8, 0.8, -99, 99 );
+//  h287 = fs->make<TProfile>( "h287", "PXB2 x_{my} vs xtrp, p_{t} > 4 GeV ;xtrp [cm];PXB2 <x_{my}-xtrp> [#mum]", 160, -0.8, 0.8, -99, 99 );
+//  h288 = fs->make<TProfile>( "h288", "PXB2 x_{my} vs l_{pix}, p_{t} > 4 GeV ;x_{track} mod 100 [#mum];PXB2 <x_{my}-xtrp> [#mum]", 100, 0, 100, -99, 99 );
+//  h289 = fs->make<TProfile>( "h289", "PXB2 x_{my} vs t_{pix}, p_{t} > 4 GeV ;x_{track} mod 200 [#mum];PXB2 rms(x_{my}-xtrp) [#mum]", 100, 0, 200, 0, 499 );
+//
+//  h290 = fs->make<TH1D>( "h290", "PXB2 residuals #Deltax, p_{t} > 12, 1-row;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h291 = fs->make<TH1D>( "h291", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h292 = fs->make<TH1D>( "h292", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h293 = fs->make<TH1D>( "h293", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h294 = fs->make<TH1D>( "h294", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h295 = fs->make<TH1D>( "h295", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h296 = fs->make<TH1D>( "h296", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h297 = fs->make<TH1D>( "h297", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h298 = fs->make<TH1D>( "h298", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h299 = fs->make<TH1D>( "h299", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h300 = fs->make<TH1D>( "h300", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//
+//  // PXB3 hits:
+//
+//  h301 = fs->make<TH1D>( "h301", "hits on tracks PXB3 ladder;ladder;hits", 46, -0.5, 45.5 );
+//  h302 = fs->make<TH1D>( "h302", "hits on tracks PXB3 module;module;hits", 10, -0.5, 9.5 );
+//  h303 = fs->make<TH1D>( "h303", "hits on tracks PXB3 R;R [cm];hits", 150, 0, 15 );
+//  h304 = fs->make<TH1D>( "h304", "hits on tracks PXB3 #phi;#phi [deg];hits", 180, -180, 180 );
+//  h305 = fs->make<TH1D>( "h305", "hits on tracks PXB3 z;z [cm];hits", 600, -30, 30 );
+//  h306 = fs->make<TH2D>( "h306", "hits on tracks PXB3 #phi-z;#phi [deg];z [cm]", 180, -180, 180, 600, -30, 30 );
+//  h307 = fs->make<TH2D>( "h307", "hits local x-y PXB3;x [cm];y [cm]", 180, -0.9, 0.9, 440, -3.3, 3.3 );
+//
+//  h308 = fs->make<TH1D>( "h308", "PXB2 lever arm;extrapolation factor to PXB2;tracks", 100, 0, 1 );
+//
+//  // pile up study:
+//
+//  h310 = fs->make<TH1D>( "h310", "PXB2 #Deltax 1-2 vtx;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h311 = fs->make<TH1D>( "h311", "PXB2 #Deltaz 1-2 vtx;PXB2 #Deltaz [#mum];hits", 100, -300, 300 );
+//  h312 = fs->make<TH1D>( "h312", "PXB2 #Deltax 3-5 vtx;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h313 = fs->make<TH1D>( "h313", "PXB2 #Deltaz 3-5 vtx;PXB2 #Deltaz [#mum];hits", 100, -300, 300 );
+//  h314 = fs->make<TH1D>( "h314", "PXB2 #Deltax 6-9 vtx;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h315 = fs->make<TH1D>( "h315", "PXB2 #Deltaz 6-9 vtx;PXB2 #Deltaz [#mum];hits", 100, -300, 300 );
+//  h316 = fs->make<TH1D>( "h316", "PXB2 #Deltax > 9 vtx;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h317 = fs->make<TH1D>( "h317", "PXB2 #Deltaz > 9 vtx;PXB2 #Deltaz [#mum];hits", 100, -300, 300 );
+//  h318 = fs->make<TH1D>( "h318", "vertcies > 9 vtx;vertcies;events", 31, -0.5, 30.5 );
+//
+//  h319 = fs->make<TProfile>( "h319", "PXB2 #sigma_{x} vs inc;#phi_{inc2} [deg];PXB2 rms(#Deltax) [#mum]", 40, -10, 10, 0, 99 );
+//
+//  h320 = fs->make<TProfile>( "h320", "PXB2 #sigma_{x} vs z_{pix}, p_{t} > 4 GeV;z_{track} mod 150 [#mum];PXB2 rms(#Deltax) [#mum]",  75, 0, 150, 0, 499 );
+//  h321 = fs->make<TProfile>( "h321", "PXB2 #sigma_{x} vs s_{pix}, p_{t} > 4 GeV;x_{cluster} mod 200 [#mum];PXB2 rms(#Deltax) [#mum]", 150, 0, 300, 0, 499 );
+//
+//  h322 = fs->make<TProfile>( "h322", "PXB2 charge vs t_{pix};x_{track} mod 200 [#mum];<charge*cos(dip)> [ke]", 100, 0, 200, 0, 199 );
+//  h323 = fs->make<TH2D>( "h323", "PXB2 t_{pix} vs s_{pix};x_{cluster} mod 200 [#mum];x_{track} mod 200 [#mum]", 150, 0, 300, 100, 0, 200 );
+//  h324 = fs->make<TH2D>( "h324", "PXB2 t_{pix} vs s_{pix} dip < 10;x_{cluster} mod 200 [#mum];x_{track} mod 200 [#mum]", 150, 0, 300, 100, 0, 200 );
+//
+//  h327 = fs->make<TProfile>( "h327", "PXB2 #sigma_{x} vs z_{loc}, 0.8-1.2 GeV;z_{loc} [cm];PXB2 rms(#Deltax) [#mum]", 432, -3.24, 3.24, 0, 499 );
+//
+//  h330 = fs->make<TProfile>( "h330", "PXB2 eta vs t_{pix};x_{track} mod 200 [#mum];PXB2 <eta>", 100, 0, 200, -2, 2 );
+//
+//  h331 = fs->make<TProfile>( "h331", "PXB2 hit error vs t_{pix};x_{track} mod 200 [#mum];PXB2 hit <error x> [#mum]", 100, 0, 200, 0, 99 );
+//  h332 = fs->make<TH1D>( "h332", "PXB2 hit error;PXB2 hit error x [#mum]", 100, 0, 100 );
+//
+//  h334 = fs->make<TProfile>( "h334", "PXB2 COG #sigma_{x} vs inc;#phi_{inc2} [deg];PXB2 COG rms(#Deltax) [#mum]", 40, -10, 10, 0, 99 );
+//
+//  h343 = fs->make<TProfile>( "h343", "PXB2 #Deltax vs l_{pix}, nrow = 2;x_{track} mod 100 [#mum];<PXB2 #Deltax> [#mum]", 100, 0, 100, -99, 99 );
+//
+//  h374 = fs->make<TH1D>( "h374", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h375 = fs->make<TH1D>( "h375", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h376 = fs->make<TH1D>( "h376", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h377 = fs->make<TH1D>( "h377", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//
+//  h379 = fs->make<TH1D>( "h379", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h380 = fs->make<TH1D>( "h380", "PXB2 residuals COG #Deltax, p_{t} > 12;PXB2 COG #Deltax [#mum];hits", 100, -150, 150 );
+//  h381 = fs->make<TH1D>( "h381", "PXB2 residuals COG #Deltax, p_{t} > 12;PXB2 COG #Deltax [#mum];hits", 100, -150, 150 );
+//  h382 = fs->make<TH1D>( "h382", "PXB2 residuals COG #Deltax, p_{t} > 12;PXB2 COG #Deltax [#mum];hits", 100, -150, 150 );
+//  h383 = fs->make<TH1D>( "h383", "PXB2 residuals COG #Deltax, p_{t} > 12;PXB2 COG #Deltax [#mum];hits", 100, -150, 150 );
+//
+//  h390 = fs->make<TH1D>( "h390", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h391 = fs->make<TH1D>( "h391", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h392 = fs->make<TH1D>( "h392", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h393 = fs->make<TH1D>( "h393", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h394 = fs->make<TH1D>( "h394", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h395 = fs->make<TH1D>( "h395", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h396 = fs->make<TH1D>( "h396", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h397 = fs->make<TH1D>( "h397", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h398 = fs->make<TH1D>( "h398", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+//  h399 = fs->make<TH1D>( "h399", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+
+  // triplets 3+1 -> 2:
+
+ // h401 = fs->make<TH1D>( "h401", "PXB2 triplets z2;z [cm];hits", 600, -30, 30 );
+ // h402 = fs->make<TH1D>( "h402", "PXB2 uphi-phi;#Delta#phi [rad];tracks", 100, -0.1, 0.1 );
+ // h403 = fs->make<TH1D>( "h403", "PXB2 udca-dca;#Deltadca [cm];tracks", 100, -0.1, 0.1 );
+ // h404 = fs->make<TH1D>( "h404", "PXB2 udip-dip;#Deltadip;tracks", 100, -0.1, 0.1 );
+ // h405 = fs->make<TH1D>( "h405", "PXB2 uz0-z0;#Deltaz_{0};tracks", 100, -0.1, 0.1 );
+
+ // h406 = fs->make<TH1D>( "h406", "valid tracker hits;tracker hits;tracks", 51, -0.5, 50.5 );
+ // h407 = fs->make<TH1D>( "h407", "valid pixel barrel hits;valid pixel barrel hits;tracks", 6, -0.5, 5.5 );
+ // h408 = fs->make<TH1D>( "h408", "tracker layers;tracker layers;tracks", 31, -0.5, 30.5 );
+
+ // h409 = fs->make<TProfile>( "h409", "PXB2 angle of incidence;PXB2 #phi [deg];PXB2 #phi_{inc} [deg]", 180, -180, 180, -90, 90 );
+
+  h410 = fs->make<TH1D>( "h410", "PXB2 residuals #Deltax;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+ // h411 = fs->make<TH1D>( "h411", "PXB2 residuals #Deltaz;PXB2 #Deltaz [#mum];hits", 100, -300, 300 );
+
+   newtree =fs->make<TTree>("newtree","test");
+
+
+   //Float_t jpsikkkmass, jpsiphikmass,jpsiphimass,jpsikmass,phikmass,jpsimass,phimass,jpsihelicity,jpsinormal;
+   //Float_t residue;
+
+   //newtree->Branch("jpsikkkmass",&jpsikkkmass,"jpsikkkmass/F");
+
+   newtree->Branch("residue",&residue,"residue/D");
+
+   newtree->Branch("residue_refit",&residue_refit,"residue_refit/D");
+   newtree->Branch("final_pt",&final_pt,"final_pt/D");
+   newtree->Branch("final_phi",&final_phi,"final_phi/D");
+   newtree->Branch("run_num",&run_num,"run_num/I");
+   newtree->Branch("lumi_block",&lumi_block,"lumi_block/I");
+
+
+
+   // mean resid profiles:
+
+  // h412 = fs->make<TProfile>( "h412", "PXB2 #Deltax vs #phi;#phi_{2} [deg];PXB2 <#Deltax> [#mum]", 180, -180, 180, -99, 99 );
+  // h412_out_zplus = fs->make<TProfile>( "h412_out_zplus", "PXB2 #Deltax vs #phi, outward-facing modules, z+;#phi_{2} [deg];PXB2 <#Deltax> [#mum]", 180, -180, 180, -99, 99 );
+  // h412_out_zminus = fs->make<TProfile>( "h412_out_zminus", "PXB2 #Deltax vs #phi, outward-facing modules, z-;#phi_{2} [deg];PXB2 <#Deltax> [#mum]", 180, -180, 180, -99, 99 );
+  // h412_in_zplus = fs->make<TProfile>( "h412_in_zplus", "PXB2 #Deltax vs #phi, inward-facing modules, z+;#phi_{2} [deg];PXB2 <#Deltax> [#mum]", 180, -180, 180, -99, 99 );
+  // h412_in_zminus = fs->make<TProfile>( "h412_in_zminus", "PXB2 #Deltax vs #phi, inward-facing modules, z-;#phi_{2} [deg];PXB2 <#Deltax> [#mum]", 180, -180, 180, -99, 99 );
+  // h413 = fs->make<TProfile>( "h413", "PXB2 #Deltaz vs #phi;#phi_{2} [deg];PXB2 <#Deltaz> [#mum]", 180, -180, 180, -199, 199 );
+
+  // h414 = fs->make<TProfile>( "h414", "PXB2 #Deltax vs z;z2 [cm];PXB2 <#Deltax> [#mum]", 80, -20, 20, -99, 99 );
+  // h415 = fs->make<TProfile>( "h415", "PXB2 #Deltaz vs z;z2 [cm];PXB2 <#Deltaz> [#mum]", 80, -20, 20, -199, 199 );
+
+  // h416 = fs->make<TProfile>( "h416", "PXB2 #Deltax vs p_{t};log(p_{t} [GeV]);PXB2 <#Deltax> [#mum]", 20, 0, 2, -99, 99 );
+  // h417 = fs->make<TProfile>( "h417", "PXB2 #Deltaz vs p_{t};log(p_{t} [GeV]);PXB2 <#Deltaz> [#mum]", 20, 0, 2, -199, 199 );
+
+  // h418 = fs->make<TProfile>( "h418", "PXB2 #Deltax vs p_{t} +;log(p_{t} [GeV]);PXB2 <#Deltax> [#mum]", 20, 0, 2, -99, 99 );
+  // h419 = fs->make<TProfile>( "h419", "PXB2 #Deltax vs p_{t} -;log(p_{t} [GeV]);PXB2 <#Deltax> [#mum]", 20, 0, 2, -99, 99 );
+
+  // h420 = fs->make<TH1D>( "h420", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+  // h420_out_zplus = fs->make<TH1D>( "h420_out_zplus", "PXB2 residuals #Deltax, p_{t} > 12, outward-facing modules, z+;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+  // h420_out_zminus = fs->make<TH1D>( "h420_out_zminus", "PXB2 residuals #Deltax, p_{t} > 12, outward-facing modules, z-;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+  // h420_in_zplus = fs->make<TH1D>( "h420_in_zplus", "PXB2 residuals #Deltax, p_{t} > 12, inward-facing modules, z+;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+  // h420_in_zminus = fs->make<TH1D>( "h420_in_zminus", "PXB2 residuals #Deltax, p_{t} > 12, inward-facing modules, z-;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+  // h421 = fs->make<TH1D>( "h421", "PXB2 residuals #Deltaz, p_{t} > 12;PXB2 #Deltaz [#mum];hits", 100, -300, 300 );
+
+  // // width profiles:
+
+  // h422 = fs->make<TProfile>( "h422", "PXB2 #sigma_{x} vs #phi;#phi_{2} [deg];PXB2 rms(#Deltax) [#mum]", 360, -180, 180, 0, 99 );
+  // h423 = fs->make<TProfile>( "h423", "PXB2 #sigma_{z} vs #phi;#phi_{2} [deg];PXB2 rms(#Deltaz) [#mum]", 360, -180, 180, 0, 199 );
+
+  // h424 = fs->make<TProfile>( "h424", "PXB2 #sigma_{x} vs z;z2 [cm];PXB2 rms(#Deltax) [#mum]", 80, -20, 20, 0, 99 );
+  // h425 = fs->make<TProfile>( "h425", "PXB2 #sigma_{z} vs z;z2 [cm];PXB2 rms(#Deltaz) [#mum]", 80, -20, 20, 0, 199 );
+
+  // h426 = fs->make<TProfile>( "h426", "PXB2 #sigma_{x} vs p_{t};log(p_{t} [GeV]);PXB2 rms(#Deltax) [#mum]", 20, 0, 2, 0, 99 );
+  // h427 = fs->make<TProfile>( "h427", "PXB2 #sigma_{z} vs p_{t};log(p_{t} [GeV]);PXB2 rms(#Deltaz) [#mum]", 20, 0, 2, 0, 199 );
+
+  // h428 = fs->make<TProfile>( "h428", "PXB2 #sigma_{x} vs dip;dip [deg];PXB2 rms(#Deltax) [#mum]", 70, -70, 70, 0, 99 );
+  // h429 = fs->make<TProfile>( "h429", "PXB2 #sigma_{z} vs dip;dip [deg];PXB2 rms(#Deltaz) [#mum]", 70, -70, 70, 0, 199 );
+
+  // h430 = fs->make<TH1D>( "h430", "PXB2 residuals #Deltax;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+  // h431 = fs->make<TH1D>( "h431", "PXB2 residuals #Deltaz;PXB2 #Deltaz [#mum];hits", 100, -300, 300 );
+
+  // h432 = fs->make<TH1D>( "h432", "PXB2 residuals #Deltaz, 18 < |dip| < 50;PXB2 #Deltaz [#mum];hits", 100, -300, 300 );
+  // h433 = fs->make<TProfile>( "h433", "PXB2 #sigma_{z} vs p_{t}, best dip;log(p_{t} [GeV]);PXB2 rms(#Deltaz) [#mum]", 20, 0, 2, 0, 199 );
+
+  // h434 = fs->make<TProfile>( "h434", "PXB2 #sigma_{x} vs inc;#phi_{inc2} [deg];PXB2 rms(#Deltax) [#mum]", 40, -10, 10, 0, 99 );
+
+  // h435 = fs->make<TProfile>( "h435", "PXB2 #sigma_{x} vs #phi at 1 GeV;#phi_{2} [deg];PXB2 rms(#Deltax) [#mum]", 360, -180, 180, 0, 499 );
+
+  // h436 = fs->make<TProfile>( "h436", "PXB2 #sigma_{x} vs inc;#phi_{inc2} [deg];PXB2 rms(#Deltax) [#mum]", 40, -10, 10, 0, 99 );
+  // h437 = fs->make<TProfile>( "h437", "PXB2 #sigma_{x} vs inc;#phi_{inc2} [deg];PXB2 rms(#Deltax) [#mum]", 40, -10, 10, 0, 99 );
+
+  // h438 = fs->make<TH1D>( "h438", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+  // h439 = fs->make<TH1D>( "h439", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+
+  // h440 = fs->make<TH1D>( "h440", "PXB2 residuals #Deltax;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+  // h441 = fs->make<TH1D>( "h441", "PXB2 residuals #Deltaz;PXB2 #Deltaz [#mum];hits", 100, -300, 300 );
+
+  // h442 = fs->make<TH1D>( "h442", "PXB2 residuals #Deltax;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+  // h443 = fs->make<TH1D>( "h443", "PXB2 residuals #Deltax;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+  // h444 = fs->make<TH1D>( "h444", "PXB2 residuals #Deltax;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+  // h445 = fs->make<TH1D>( "h445", "PXB2 residuals #Deltax;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+  // h446 = fs->make<TH1D>( "h446", "PXB2 residuals #Deltax;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+  // h447 = fs->make<TH1D>( "h447", "PXB2 cluster rows;PXB2 cluster rows;hits", 10, 0.5, 10.5 );
+
+  // h448 = fs->make<TH1D>( "h448", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+  // h449 = fs->make<TH1D>( "h449", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+
+  // // triplets 3+1 -> 2 with refitted kappa:
+
+  // h451 = fs->make<TH1D>( "h451", "PXB2 triplets z2;z [cm];hits", 600, -30, 30 );
+  // h452 = fs->make<TH1D>( "h452", "PXB2 uphi-phi;#Delta#phi [rad];tracks", 100, -0.1, 0.1 );
+  // h453 = fs->make<TH1D>( "h453", "PXB2 udca-dca;#Deltadca [cm];tracks", 100, -0.1, 0.1 );
+  // h454 = fs->make<TH1D>( "h454", "PXB2 udip-dip;#Deltadip;tracks", 100, -0.1, 0.1 );
+  // h455 = fs->make<TH1D>( "h455", "PXB2 uz0-z0;#Deltaz_{0};tracks", 100, -0.1, 0.1 );
+  // h456 = fs->make<TH1D>( "h456", "PXB2 (kap2-kap)/kap;(#kappa_{2}-#kappa)/#kappa;tracks", 100, -0.02, 0.02 );
+
+  // h459 = fs->make<TProfile>( "h459", "PXB2 angle of incidence;PXB2 #phi [deg];PXB2 #phi_{inc} [deg]", 180, -180, 180, -90, 90 );
+
+  // h460 = fs->make<TH1D>( "h460", "PXB2 residuals #Deltax;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+  // h461 = fs->make<TH1D>( "h461", "PXB2 residuals #Deltaz;PXB2 #Deltaz [#mum];hits", 100, -300, 300 );
+
+  // // mean resid profiles:
+
+  // h462 = fs->make<TProfile>( "h462", "PXB2 #Deltax vs #phi;#phi_{2} [deg];PXB2 <#Deltax> [#mum]", 180, -180, 180, -99, 99 );
+  // h463 = fs->make<TProfile>( "h463", "PXB2 #Deltaz vs #phi;#phi_{2} [deg];PXB2 <#Deltaz> [#mum]", 180, -180, 180, -199, 199 );
+
+  // h464 = fs->make<TProfile>( "h464", "PXB2 #Deltax vs z;z2 [cm];PXB2 <#Deltax> [#mum]", 80, -20, 20, -99, 99 );
+  // h465 = fs->make<TProfile>( "h465", "PXB2 #Deltaz vs z;z2 [cm];PXB2 <#Deltaz> [#mum]", 80, -20, 20, -199, 199 );
+
+  // h466 = fs->make<TProfile>( "h466", "PXB2 #Deltax vs p_{t};log(p_{t} [GeV]);PXB2 <#Deltax> [#mum]", 20, 0, 2, -99, 99 );
+  // h467 = fs->make<TProfile>( "h467", "PXB2 #Deltaz vs p_{t};log(p_{t} [GeV]);PXB2 <#Deltaz> [#mum]", 20, 0, 2, -199, 199 );
+
+  // h468 = fs->make<TProfile>( "h468", "PXB2 #Deltax vs p_{t} +;log(p_{t} [GeV]);PXB2 <#Deltax> [#mum]", 20, 0, 2, -99, 99 );
+  // h469 = fs->make<TProfile>( "h469", "PXB2 #Deltax vs p_{t} -;log(p_{t} [GeV]);PXB2 <#Deltax> [#mum]", 20, 0, 2, -99, 99 );
+
+  // h470 = fs->make<TH1D>( "h470", "PXB2 residuals #Deltax, p_{t} > 12;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+  // h471 = fs->make<TH1D>( "h471", "PXB2 residuals #Deltaz, p_{t} > 12;PXB2 #Deltaz [#mum];hits", 100, -300, 300 );
+
+  // // width profiles:
+
+  // h472 = fs->make<TProfile>( "h472", "PXB2 #sigma_{x} vs #phi;#phi_{2} [deg];PXB2 rms(#Deltax) [#mum]", 360, -180, 180, 0, 99 );
+  // h473 = fs->make<TProfile>( "h473", "PXB2 #sigma_{z} vs #phi;#phi_{2} [deg];PXB2 rms(#Deltaz) [#mum]", 360, -180, 180, 0, 199 );
+
+  // h474 = fs->make<TProfile>( "h474", "PXB2 #sigma_{x} vs z;z2 [cm];PXB2 rms(#Deltax) [#mum]", 80, -20, 20, 0, 99 );
+  // h475 = fs->make<TProfile>( "h475", "PXB2 #sigma_{z} vs z;z2 [cm];PXB2 rms(#Deltaz) [#mum]", 80, -20, 20, 0, 199 );
+
+  // h476 = fs->make<TProfile>( "h476", "PXB2 #sigma_{x} vs p_{t};log(p_{t} [GeV]);PXB2 rms(#Deltax) [#mum]", 20, 0, 2, 0, 99 );
+  // h477 = fs->make<TProfile>( "h477", "PXB2 #sigma_{z} vs p_{t};log(p_{t} [GeV]);PXB2 rms(#Deltaz) [#mum]", 20, 0, 2, 0, 199 );
+
+  // h478 = fs->make<TProfile>( "h478", "PXB2 #sigma_{x} vs dip;dip [deg];PXB2 rms(#Deltax) [#mum]", 70, -70, 70, 0, 99 );
+  // h479 = fs->make<TProfile>( "h479", "PXB2 #sigma_{z} vs dip;dip [deg];PXB2 rms(#Deltaz) [#mum]", 70, -70, 70, 0, 199 );
+
+  // h480 = fs->make<TH1D>( "h480", "PXB2 residuals #Deltax;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+  // h481 = fs->make<TH1D>( "h481", "PXB2 residuals #Deltaz;PXB2 #Deltaz [#mum];hits", 100, -300, 300 );
+
+  // h482 = fs->make<TH1D>( "h482", "PXB2 residuals #Deltaz, 18 < |dip| < 50;PXB2 #Deltaz [#mum];hits", 100, -300, 300 );
+  // h483 = fs->make<TProfile>( "h483", "PXB2 #sigma_{z} vs p_{t}, best dip;log(p_{t} [GeV]);PXB2 rms(#Deltaz) [#mum]", 20, 0, 2, 0, 199 );
+
+  // h484 = fs->make<TProfile>( "h484", "PXB2 #sigma_{x} vs inc;#phi_{inc2} [deg];PXB2 rms(#Deltax) [#mum]", 40, -10, 10, 0, 99 );
+
+  // h485 = fs->make<TProfile>( "h485", "PXB2 #sigma_{x} vs #phi at 1 GeV;#phi_{2} [deg];PXB2 rms(#Deltax) [#mum]", 360, -180, 180, 0, 499 );
+
+  // h490 = fs->make<TH1D>( "h490", "PXB2 residuals #Deltax;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+  // h491 = fs->make<TH1D>( "h491", "PXB2 residuals #Deltaz;PXB2 #Deltaz [#mum];hits", 100, -300, 300 );
+
+  // h492 = fs->make<TH1D>( "h492", "PXB2 residuals #Deltax;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+  // h493 = fs->make<TH1D>( "h493", "PXB2 residuals #Deltax;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+  // h494 = fs->make<TH1D>( "h494", "PXB2 residuals #Deltax;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+  // h495 = fs->make<TH1D>( "h495", "PXB2 residuals #Deltax;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+  // h496 = fs->make<TH1D>( "h496", "PXB2 residuals #Deltax;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
+
+
+   //
+}
+
+//----------------------------------------------------------------------
+// method called for each event:
+
+void PxlTest::beginRun(const edm::Run& iRun, const edm::EventSetup& iSetup)
+{
+   bool hltSetupChanged = false;
+   if(!HLTConfig.init(iRun, iSetup, _triggerSrc.process(), hltSetupChanged))
+      throw cms::Exception("Failed to init HLT config");
+}
+
+void PxlTest::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup){
+
+   using namespace std;
+   using namespace edm;
+   using namespace reco;
+   using namespace math;
+
+   const double pi = 4*atan(1);
+   const double wt = 180/pi;
+   const double twopi = 2*pi;
+   const double pihalf = 2*atan(1);
+   const double sqrtpihalf = sqrt(pihalf);
+
+   const bool showTrigger = false;
+   if(showTrigger)
+   { 
+      edm::Handle<edm::TriggerResults> triggerResults;
+      iEvent.getByLabel(_triggerSrc, triggerResults);
+      assert(triggerResults->size() == HLTConfig.size());
+
+      const edm::TriggerNames& triggerNames = iEvent.triggerNames(*triggerResults);
+      for(unsigned int i = 0; i < triggerResults->size(); ++i)
+      {
+	 std::string triggerName = triggerNames.triggerName(i);
+	 std::pair<int, int> prescale = HLTConfig.prescaleValues(iEvent, iSetup, triggerName);
+	 std::cout << i << ": " << triggerName << "; " << prescale.first << ", " << prescale.second << std::endl;
+      }
+   }
+
+   const bool simulateTrigger = false;
+   if(simulateTrigger)
+   {
+      edm::Handle<edm::TriggerResults> triggerResults;
+      iEvent.getByLabel(_triggerSrc, triggerResults);
+
+      bool triggerAccepted = false;
+      const edm::TriggerNames& triggerNames = iEvent.triggerNames(*triggerResults);
+      for(unsigned int i = 0; i < triggerResults->size(); ++i)
+      {
+	 if(triggerResults->accept(i))
+	 {
+	    std::string triggerName = triggerNames.triggerName(i);
+	    for(unsigned int j = 0; j < N_SIM_TRIGGERS; ++j)
+	    {
+	       if(triggerName.find(SIM_TRIGGERS[j].name) == 0)
+	       {
+		  if(SIM_TRIGGERS[j].prescale == 1)
+		  {
+		     triggerAccepted = true;
+		  }
+		  else
+		  {
+		     edm::Service<edm::RandomNumberGenerator> rng;
+		     CLHEP::RandFlat distribution(rng->getEngine(), 0.0, 1.0);
+		     const double r = distribution.fire();
+
+		     if(r < 1.0 / SIM_TRIGGERS[j].prescale)
+			triggerAccepted = true;
+		  }
+	       }
+	    }
+	 }
+      }
+
+      if(!triggerAccepted)
+	 return;
+   }
+
+   myCounters::neve++;
+
+   if( myCounters::prevrun != iEvent.run() ){
+
+      time_t unixZeit = iEvent.time().unixTime();
+
+      cout << "new run " << iEvent.run();
+      cout << ", LumiBlock " << iEvent.luminosityBlock();
+      cout << " taken " << ctime(&unixZeit); // ctime has endline
+
+      myCounters::prevrun = iEvent.run();
+
+   }// new run
+
+   int idbg = 0;
+   if( myCounters::neve < 2 ) idbg = 1;
+
+   int jdbg = 0;
+
+   if( idbg ) {
+      cout << endl;
+      cout << "run " << iEvent.run();
+      cout << ", LumiBlock " << iEvent.luminosityBlock();
+      cout << ", event " << iEvent.eventAuxiliary().event();
+      time_t unixZeit = iEvent.time().unixTime();
+      cout << ", taken " << ctime(&unixZeit); // ctime has endline
+   }
+
+
+   run_num=iEvent.run();
+   lumi_block=iEvent.luminosityBlock();   
+   //--------------------------------------------------------------------
+   // beam spot:
+
+   edm::Handle<reco::BeamSpot> rbs;
+   iEvent.getByLabel( "offlineBeamSpot", rbs );
+
+   XYZPoint bsP = XYZPoint(0,0,0);
+   int ibs = 0;
+
+   if( rbs.failedToGet() ) return;
+   if( ! rbs.isValid() ) return;
+
+   ibs = 1;
+//   h000->Fill( rbs->betaStar() );
+//   h001->Fill( rbs->emittanceX() );
+//   h002->Fill( rbs->BeamWidthX()*1e4 );
+//   h003->Fill( rbs->BeamWidthY()*1e4 );
+//   h004->Fill( rbs->sigmaZ() );
+//   h005->Fill( rbs->x0() );
+//   h006->Fill( rbs->y0() );
+//   h007->Fill( rbs->z0() );
+//   h008->Fill( rbs->dxdz()*1e3 );
+//   h009->Fill( rbs->dydz()*1e3 );
+   bsP = XYZPoint( rbs->x0(), rbs->y0(), rbs->z0() );
+
+   double bx = rbs->BeamWidthX();
+   double by = rbs->BeamWidthY();
+
+   if( idbg ){
+      cout << "beam spot x " << rbs->x0();
+      cout << ", y " << rbs->y0();
+      cout << ", z " << rbs->z0();
+      cout << endl;
+   }
+
+   //--------------------------------------------------------------------
+   // primary vertices:
+
+   Handle<VertexCollection> vertices;
+   iEvent.getByLabel( "offlinePrimaryVertices", vertices );
+
+   if( vertices.failedToGet() ) return;
+   if( !vertices.isValid() ) return;
+
+   int nvertex = vertices->size();
+//   h010->Fill( nvertex );
+
+   // need vertex global point for tracks
+   // from #include "DataFormats/GeometryVector/interface/GlobalPoint.h"
+   // Global points are three-dimensional by default
+   // typedef Global3DPoint  GlobalPoint;
+   // typedef Point3DBase< float, GlobalTag> Global3DPoint;
+
+   XYZPoint vtxN = XYZPoint(0,0,0);
+   XYZPoint vtxP = XYZPoint(0,0,0);
+
+   double bestNdof = 0;
+   double maxSumPt = 0;
+   Vertex bestPvx;
+
+//   for( VertexCollection::const_iterator iVertex = vertices->begin();
+//	 iVertex != vertices->end(); ++iVertex ) {
+//
+//      if( ! iVertex->isValid() )
+//	 h011->Fill( iVertex->z() );
+//
+//      else {
+//
+//	 if( iVertex->isFake() ) 
+//	    h012->Fill( iVertex->z() );
+//
+//	 else{
+//	    h013->Fill( iVertex->z() );
+//	    h014->Fill( iVertex->x() );
+//	    h015->Fill( iVertex->y() );
+//	    h016->Fill( iVertex->ndof() );
+//	    h017->Fill( iVertex->ndof() );
+//
+//	    if( idbg ){
+//	       cout << "vertex";
+//	       cout << ": x " << iVertex->x();
+//	       cout << ", y " << iVertex->y();
+//	       cout << ", z " << iVertex->z();
+//	       cout << ", ndof " << iVertex->ndof();
+//	       cout << ", sumpt " << iVertex->p4().pt();
+//	       cout << endl;
+//	    }
+//
+//	    if( iVertex->hasRefittedTracks() )
+//	       h018->Fill( iVertex->z() ); // empty in Zmumu sample
+//	    else
+//	       h019->Fill( iVertex->z() ); // all here: why?
+//
+//	    if( iVertex->ndof() > bestNdof ) {
+//	       bestNdof = iVertex->ndof();
+//	       vtxN = XYZPoint( iVertex->x(), iVertex->y(), iVertex->z() );
+//	    }
+//
+//	    h021->Fill( iVertex->p4().pt() );
+//
+//	    if( iVertex->p4().pt() > maxSumPt ) {
+//	       maxSumPt = iVertex->p4().pt();
+//	       vtxP = XYZPoint( iVertex->x(), iVertex->y(), iVertex->z() );
+//	       bestPvx = *iVertex;
+//	    }
+//	 }// non-fake
+//      }//valid
+//   } // loop over vertices
+//
+//   h022->Fill( maxSumPt );
+//
+//   if( maxSumPt < 1 ) return;
+//
+//   if( maxSumPt < 1 ) vtxP = vtxN;
+//
+//   h023->Fill( vtxP.x() );
+//   h024->Fill( vtxP.y() );
+//   h025->Fill( vtxP.z() );
+//
+   double xBS = 0;
+   double yBS = 0;
+   if( ibs ) {
+      xBS = bsP.x();
+      yBS = bsP.y();
+   }
+   else {
+      xBS = vtxP.x();
+      yBS = vtxP.y();
+   }
+
+   //--------------------------------------------------------------------
+   // MET:
+
+   edm::Handle< edm::View<reco::PFMET> > pfMEThandle;
+   iEvent.getByLabel( "pfMet", pfMEThandle );
+
+   if( !pfMEThandle.failedToGet() && pfMEThandle.isValid()){
+
+//      h026->Fill( pfMEThandle->front().sumEt() );
+//      h027->Fill( pfMEThandle->front().et() );
+
+   }
+
+   //--------------------------------------------------------------------
+   // get a fitter to refit TrackCandidates, the same fitter as used in standard reconstruction:
+   // Fitter = cms.string('KFFittingSmootherWithOutliersRejectionAndRK'),
+   // KalmanFilter
+   // RungeKutta
+
+   ESHandle<TrajectoryFitter> TF;
+   iSetup.get<TrajectoryFitter::Record>().get( "KFFittingSmootherWithOutliersRejectionAndRK", TF );
+   const TrajectoryFitter* theFitter = TF.product();
+
+   // TrackPropagator:
+
+   edm::ESHandle<Propagator> prop;
+   iSetup.get<TrackingComponentsRecord>().get( "PropagatorWithMaterial", prop );
+   const Propagator* thePropagator = prop.product();
+
+   //--------------------------------------------------------------------
+   // tracks:
+
+   Handle<TrackCollection> tracks;
+
+   iEvent.getByLabel( "generalTracks", tracks );
+
+   if( tracks.failedToGet() ) return;
+   if( !tracks.isValid() ) return;
+
+   if( idbg ){
+      cout << "  tracks " << tracks->size();
+      cout << endl;
+   }
+
+//   h030->Fill( tracks->size() );
+
+   //----------------------------------------------------------------------------
+   // get tracker geometry:
+
+   edm::ESHandle<TrackerGeometry> pTG;
+   iSetup.get<TrackerDigiGeometryRecord>().get( pTG );
+
+   if( ! pTG.isValid() ) {
+      cout << "Unable to find TrackerDigiGeometry. Return\n";
+      return;
+   }
+
+   // loop over tracker detectors:
+
+   for( TrackerGeometry::DetContainer::const_iterator idet = pTG->dets().begin();
+	 idet != pTG->dets().end(); ++idet ) {
+
+      DetId mydetId = (*idet)->geographicalId();
+      uint32_t mysubDet = mydetId.subdetId();
+
+      //    if( myCounters::neve == 1 ){
+      if( myCounters::neve == 0 ){
+
+	 //cout << "Det " << mydetId.det();
+	 //cout << ", subDet " << mydetId.subdetId();
+
+	 if( mysubDet == PixelSubdetector::PixelBarrel ) {
+
+	    cout << ": PXB layer " << PXBDetId(mydetId).layer();
+	    cout << ", ladder " << PXBDetId(mydetId).ladder();
+	    cout << ", module " << PXBDetId(mydetId).module();
+	    cout << ", at R " << (*idet)->position().perp();
+	    cout << ", F " << (*idet)->position().barePhi()*wt;
+	    cout << ", z " << (*idet)->position().z();
+	    cout << endl;
+	    cout << "rot x";
+	    cout << "\t" << (*idet)->rotation().xx();
+	    cout << "\t" << (*idet)->rotation().xy();
+	    cout << "\t" << (*idet)->rotation().xz();
+	    cout << endl;
+	    cout << "rot y";
+	    cout << "\t" << (*idet)->rotation().yx();
+	    cout << "\t" << (*idet)->rotation().yy();
+	    cout << "\t" << (*idet)->rotation().yz();
+	    cout << endl;
+	    cout << "rot z";
+	    cout << "\t" << (*idet)->rotation().zx();
+	    cout << "\t" << (*idet)->rotation().zy();
+	    cout << "\t" << (*idet)->rotation().zz();
+	    cout << endl;
+
+	    // normal vector: includes alignment (varies from module to module along z on one ladder)
+	    // neighbouring ladders alternate with inward/outward orientation
+
+	    cout << "normal";
+	    cout << ": x " << (*idet)->surface().normalVector().x();
+	    cout << ", y " << (*idet)->surface().normalVector().y();
+	    cout << ", z " << (*idet)->surface().normalVector().z();
+	    cout << ", f " << (*idet)->surface().normalVector().barePhi()*wt;
+	    cout << endl;
+
+	 }//PXB
+
+	 if( mysubDet == PixelSubdetector::PixelEndcap ) {
+
+	    cout << ": PXD side " << PXFDetId(mydetId).side();
+	    cout << ", disk " << PXFDetId(mydetId).disk();
+	    cout << ", blade " << PXFDetId(mydetId).blade();
+	    cout << ", panel " << PXFDetId(mydetId).panel();
+	    cout << ", module " << PXFDetId(mydetId).module();
+	    cout << ", at R " << (*idet)->position().perp();
+	    cout << ", F " << (*idet)->position().barePhi()*wt;
+	    cout << ", z " << (*idet)->position().z();
+	    cout << endl;
+	    cout << "rot x";
+	    cout << "\t" << (*idet)->rotation().xx();
+	    cout << "\t" << (*idet)->rotation().xy();
+	    cout << "\t" << (*idet)->rotation().xz();
+	    cout << endl;
+	    cout << "rot y";
+	    cout << "\t" << (*idet)->rotation().yx();
+	    cout << "\t" << (*idet)->rotation().yy();
+	    cout << "\t" << (*idet)->rotation().yz();
+	    cout << endl;
+	    cout << "rot z";
+	    cout << "\t" << (*idet)->rotation().zx();
+	    cout << "\t" << (*idet)->rotation().zy();
+	    cout << "\t" << (*idet)->rotation().zz();
+	    cout << endl;
+	    cout << "normal";
+	    cout << ": x " << (*idet)->surface().normalVector().x();
+	    cout << ", y " << (*idet)->surface().normalVector().y();
+	    cout << ", z " << (*idet)->surface().normalVector().z();
+	    cout << ", f " << (*idet)->surface().normalVector().barePhi()*wt;
+	    cout << endl;
+
+	 }//PXD
+
+      }//idbg
+
+   }//idet
+
+   //----------------------------------------------------------------------------
+   // transient track builder, needs B-field from data base (global tag in .py)
+
+   edm::ESHandle<TransientTrackBuilder> theB;
+
+   iSetup.get<TransientTrackRecord>().get( "TransientTrackBuilder", theB );
+
+   // transient rec hits:
+
+   ESHandle<TransientTrackingRecHitBuilder> hitBuilder;
+   iSetup.get<TransientRecHitRecord>().get( _ttrhBuilder, hitBuilder );
+
+#if 0
+   edm::ESHandle<SiPixelLorentzAngle> SiPixelLorentzAngle_; 
+   iSetup.get<SiPixelLorentzAngleRcd>().get(SiPixelLorentzAngle_);
+   std::map<unsigned int,float> detid_la= SiPixelLorentzAngle_->getLorentzAngles();
+   std::map<unsigned int,float>::const_iterator it;
+   for (it=detid_la.begin();it!=detid_la.end();it++)
+   {
+      unsigned int subdet   = DetId(it->first).subdetId();
+      if(subdet == static_cast<int>(PixelSubdetector::PixelBarrel))
+	 std::cout << it->first << ": " << it->second << std::endl;
+   }
+#endif
+
+   //----------------------------------------------------------------------------
+   // Tracks:
+
+   double sumpt = 0;
+   double sumq = 0;
+   Surface::GlobalPoint origin = Surface::GlobalPoint(0,0,0);
+
+   for( TrackCollection::const_iterator iTrack = tracks->begin();
+	 iTrack != tracks->end(); ++iTrack ) {
+
+      // cpt = cqRB = 0.3*R[m]*B[T] = 1.14*R[m] for B=3.8T
+      // D = 2R = 2*pt/1.14
+      // calo: D = 1.3 m => pt = 0.74 GeV/c
+
+      double pt = iTrack->pt();
+      double pp = iTrack->p();
+
+      //if( pt < 0.75 ) continue;// curls up
+      //if( pt < 1.75 ) continue;// want sharper image
+
+      if( abs( iTrack->dxy(vtxP) ) > 5*iTrack->dxyError() ) continue; // not prompt
+
+      sumpt += pt;
+      sumq += iTrack->charge();
+
+      double logpt = log(pt) / log(10);
+
+//      h031->Fill( iTrack->charge() );
+//      h032->Fill( pt );
+//      h033->Fill( pt );
+
+      const reco::HitPattern& hp = iTrack->hitPattern();
+
+//      h035->Fill( hp.numberOfValidTrackerHits() );
+//      h036->Fill( hp.numberOfValidPixelBarrelHits() );
+//      h037->Fill( hp.trackerLayersWithMeasurement() );
+//      h038->Fill( hp.pixelBarrelLayersWithMeasurement() );
+
+      if( idbg ) {
+	 cout << endl;
+	 cout << "Track " << distance( tracks->begin(), iTrack );
+	 cout << ": pt " << iTrack->pt();
+	 cout << ", eta " << iTrack->eta();
+	 cout << ", phi " << iTrack->phi()*wt;
+      cout << setprecision(1);
+      cout << ", dxyv " << iTrack->dxy(vtxP)*1E4 << " um";
+      cout << ", dzv " << iTrack->dz(vtxP)*1E1 << " mm";
+      cout << setprecision(4);
+      cout << ", hits " << hp.numberOfHits();
+      cout << ", valid " << hp.numberOfValidTrackerHits();
+      cout << endl;
+    }
+
+    double phi = iTrack->phi();
+    double dca = iTrack->d0(); // w.r.t. origin                               
+    //double dca = -iTrack->dxy(); // dxy = -d0                               
+    double dip = iTrack->lambda();
+    double z0  = iTrack->dz();
+    double tet = pihalf - dip;
+    //double eta = iTrack->eta();
+
+    // beam line at z of track, taking beam tilt into account
+
+    double zBeam = iTrack->dz(bsP);//z0p of track along beam line w.r.t. beam z center
+    double xBeam = rbs->x0() + rbs->dxdz() * zBeam;//beam at z of track
+    double yBeam = rbs->y0() + rbs->dydz() * zBeam;
+    double z0p =  zBeam + bsP.z(); // z0p of track along beam line w.r.t. CMS z = 0
+    XYZPoint blP = XYZPoint( xBeam, yBeam, z0p );//point on beam line at z of track
+
+    xBS = xBeam;//improve
+    yBS = yBeam;//beam tilt taken into account
+
+    double bcap = iTrack->dxy(blP);//impact parameter to beam
+    double edca = iTrack->dxyError();
+    double ebca = sqrt( edca*edca + bx*by );//round beam
+    double sbca = bcap / ebca;//impact parameter significance
+
+//    if( hp.hasValidHitInFirstPixelBarrel() &&
+//	hp.trackerLayersWithMeasurement() > 7 ) {
+//
+//      if( pt > 8 ) {
+//
+//	h040->Fill( bcap*1E4 );//26 um in Oct 2011, 21 um Apr 2012
+//	h041->Fill( edca*1E4 );
+//	h042->Fill( sbca );//1.02 in 2011 reReco
+//
+//      }
+//
+//      // vs logpt:
+//      // profile of abs(dca) gives mean abs(dca):
+//      // mean of abs(Gauss) = 0.7979 * RMS = 1/sqrt(pi/2) 
+//      // => rms = sqrt(pi/2) * mean of abs (sqrt(pi/2) = 1.2533)
+//
+//      h043->Fill( logpt, ebca*1E4 );
+//      if( abs(sbca) < 5 ) {
+//	h044->Fill( logpt, sqrtpihalf*abs(bcap)*1E4 );
+//	h045->Fill( logpt, sqrtpihalf*abs(sbca) );
+//      }
+//
+//    }//long tracks
+
+    // transient track:
+
+    TransientTrack tTrack = theB->build(*iTrack);
+
+    TrajectoryStateOnSurface initialTSOS = tTrack.innermostMeasurementState();
+
+    double kap = tTrack.initialFreeState().transverseCurvature();
+
+    TrajectoryStateClosestToPoint tscp = tTrack.trajectoryStateClosestToPoint( origin );
+//
+//    if( tscp.isValid() ) {
+//
+//      h057->Fill( tscp.referencePoint().x() ); // 0.0
+//      h058->Fill( tscp.referencePoint().y() ); // 0.0
+//      h059->Fill( tscp.referencePoint().z() ); // 0.0
+//      kap = tscp.perigeeParameters().transverseCurvature();
+//      phi = tscp.perigeeParameters().phi();
+//      dca = tscp.perigeeParameters().transverseImpactParameter();
+//      tet = tscp.perigeeParameters().theta();
+//      z0  = tscp.perigeeParameters().longitudinalImpactParameter();
+//      dip = pihalf - tet;
+//
+//      h051->Fill( kap - tTrack.initialFreeState().transverseCurvature() ); // identical
+//      h052->Fill( phi - iTrack->phi() ); // identical
+//      h053->Fill( dca - iTrack->d0() ); // identical
+//      h054->Fill( dip - iTrack->lambda() ); // identical
+//      h055->Fill( z0  - iTrack->dz() ); // identical
+//
+//    }//tscp valid
+
+    double cf = cos(phi);
+    double sf = sin(phi);
+    //double xdca =  dca * sf;
+    //double ydca = -dca * cf;
+
+    //double tt = tan(tet);
+
+    double rinv = -kap; // Karimaki                                           
+    double rho = 1/kap;
+    double erd = 1.0 - kap*dca;
+    double drd = dca * ( 0.5*kap*dca - 1.0 ); // 0.5 * kap * dca**2 - dca;
+    double hkk = 0.5*kap*kap;
+
+    // track w.r.t. beam (cirmov):
+
+    double dp = -xBS*sf + yBS*cf + dca;
+    double dl = -xBS*cf - yBS*sf;
+    double sa = 2*dp + rinv * ( dp*dp + dl*dl );
+    double dcap = sa / ( 1 + sqrt(1 + rinv*sa) );// distance to beam
+    double ud = 1 + rinv*dca;
+    double phip = atan2( -rinv*xBS + ud*sf, rinv*yBS + ud*cf );//direction
+
+    // track at R(PXB1), from FUNPHI, FUNLEN:
+
+    double R1 = 4.4; // PXB1
+
+    double s1 = 0;
+    double fpos1 = phi - pihalf;
+
+    if( R1 >= abs(dca) ) {
+
+      // sin(delta phi):
+
+      double sindp = ( 0.5*kap * (R1*R1 + dca*dca) - dca ) / (R1*erd);
+      fpos1 = phi + asin(sindp); // phi position at R1
+
+      // sin(alpha):
+
+      double sina = R1*kap * sqrt( 1.0 - sindp*sindp );
+
+      // s = alpha / kappa:
+
+      if( sina >= 1.0 )
+	s1 = pi / kap;
+      else{
+	if( sina <= -1.0 )
+	  s1 = -pi / kap;
+	else
+	  s1 = asin(sina) / kap;//always positive
+      }
+
+      // Check direction: limit to half-turn
+
+      if( hkk * ( R1*R1 - dca*dca ) > erd ) s1 = pi/abs(kap) - s1; // always positive
+
+    }// R1 > dca
+
+    if( fpos1 > pi ) fpos1 -= twopi;
+    else if( fpos1 < -pi ) fpos1 += twopi;
+
+    double zR1 = z0 + s1*tan(dip); // z at R1
+
+    //--------------------------------------------------------------------------
+    // loop over tracker detectors:
+
+    double xcrss[99];
+    double ycrss[99];
+    double zcrss[99];
+    int ncrss = 0;
+
+    for( TrackerGeometry::DetContainer::const_iterator idet = pTG->dets().begin();
+	 idet != pTG->dets().end(); ++idet ) {
+
+      DetId mydetId = (*idet)->geographicalId();
+      uint32_t mysubDet = mydetId.subdetId();
+
+      if( mysubDet != PixelSubdetector::PixelBarrel ) continue;
+
+      /*
+	cout << ": PXB layer " << PXBDetId(mydetId).layer();
+	cout << ", ladder " << PXBDetId(mydetId).ladder();
+	cout << ", module " << PXBDetId(mydetId).module();
+	cout << ", at R1 " << (*idet)->position().perp();
+	cout << ", F " << (*idet)->position().barePhi()*wt;
+	cout << ", z " << (*idet)->position().z();
+	cout << endl;
+      */
+
+      if( PXBDetId(mydetId).layer() == 1 ) {
+
+	double dz = zR1 - (*idet)->position().z();
+
+	if( abs(dz) > 4.0 ) continue;
+
+	double df = fpos1 - (*idet)->position().barePhi();//track phi at R1 vs ladder phi
+
+	if( df > pi ) df -= twopi;
+	else if( df < -pi ) df += twopi;
+
+	if( abs(df)*wt > 36.0 ) continue;//coarse matching track to ladder
+
+	// normal vector: includes alignment (varies from module to module along z on one ladder)
+	// neighbouring ladders alternate with inward/outward orientation
+
+	/*
+	  cout << "normal";
+	  cout << ": x " << (*idet)->surface().normalVector().x();
+	  cout << ", y " << (*idet)->surface().normalVector().y();
+	  cout << ", z " << (*idet)->surface().normalVector().z();
+	  cout << ", f " << (*idet)->surface().normalVector().barePhi()*wt;
+	  cout << endl;
+	*/
+
+	double phiN = (*idet)->surface().normalVector().barePhi();//normal vector
+
+	double phidet = phiN - pihalf;// orientation of sensor plane in x-y
+	double ux = cos(phidet);// vector in sensor plane
+	double uy = sin(phidet);
+	double x = (*idet)->position().x();
+	double y = (*idet)->position().y();
+
+	// intersect helix with line: FUNRXY (in FUNPHI) from V. Blobel
+	// factor f for intersect point (x + f*ux, y + f*uy)
+
+	double a =                                 kap * ( ux*ux + uy*uy ) * 0.5;
+	double b =       erd * ( ux*sf - uy*cf ) + kap * ( ux*x + uy*y );
+	double c = drd + erd * (  x*sf -  y*cf ) + kap * (  x*x +  y*y ) * 0.5;
+	double dis = b*b - 4.0*a*c;
+	double f = 0;
+
+	if( dis > 0 ) {
+
+	  dis = sqrt(dis);
+	  double f1 = 0;
+	  double f2 = 0;
+
+	  if( b < 0 ) {
+            f1 = 0.5 * ( dis - b ) / a;
+	    f2 = 2.0 * c / ( dis - b );
+	  }
+	  else{
+            f1 = -0.5 * ( dis + b ) / a;
+            f2 = -2.0 * c / ( dis + b );
+	  }
+
+	  f = f1;
+	  if( abs(f2) < abs(f1) ) f = f2;
+
+	}//dis
+
+	xcrss[ncrss] = x + f*ux;
+	ycrss[ncrss] = y + f*uy;
+	double r = sqrt( xcrss[ncrss]*xcrss[ncrss] + ycrss[ncrss]*ycrss[ncrss] );
+
+	double s = 0;
+
+	if( r >= abs(dca) ) {
+	  double sindp = ( 0.5*kap * ( r*r + dca*dca ) - dca ) / (r*erd);
+	  double sina = r*kap * sqrt( 1.0 - sindp*sindp );
+	  if( sina >= 1.0 )
+	    s = pi / kap;
+	  else{
+	    if( sina <= -1.0 )
+	      s = -pi / kap;
+	    else
+	      s = asin(sina) / kap;
+	  }
+	  if( hkk * ( r*r - dca*dca ) > erd ) s = pi/abs(kap) - s;
+	}
+
+	zcrss[ncrss] = z0 + s*tan(dip); // z at r
+
+	ncrss++;
+
+      }//PXB1
+
+    }//idet
+
+    //--------------------------------------------------------------------------
+    // rec hits from track extra:
+
+    if( iTrack->extra().isNull() ) continue;//next track
+    if( ! iTrack->extra().isAvailable() ) continue;//next track
+
+//    h034->Fill( tTrack.recHitsSize() ); // tTrack
+
+    double rmin = 99.9;
+    uint32_t innerDetId = 0;
+    double xPXB1 = 0;
+    double yPXB1 = 0;
+    double zPXB1 = 0;
+    double uPXB1 = 0;
+    double vPXB1 = 0;
+    double ePXB1 = 0;
+    double fPXB1 = 0;
+
+    double xPXB2 = 0;
+    double yPXB2 = 0;
+    double zPXB2 = 0;
+    double uPXB2 = 0;
+    double vPXB2 = 0;
+    double ePXB2 = 0;
+    double fPXB2 = 0;
+
+    double xPXB3 = 0;
+    double yPXB3 = 0;
+    double zPXB3 = 0;
+    double uPXB3 = 0;
+    double vPXB3 = 0;
+    double ePXB3 = 0;
+    double fPXB3 = 0;
+
+    int n1 = 0;
+    int n2 = 0;
+    int n3 = 0;
+    double phiN1 = 0;
+    double phiN2 = 0;
+    double phiN3 = 0;
+    double clch1 = 0;
+    double clch2 = 0;
+    double clch3 = 0;
+    int ncol1 = 0;
+    int ncol2 = 0;
+    int ncol3 = 0;
+    int nrow1 = 0;
+    int nrow2 = 0;
+    int nrow3 = 0;
+    double etaX1 = 0;
+    double etaX2 = 0;
+    double etaX3 = 0;
+    double cogp1 = 0;
+    double cogp2 = 0;
+    double cogp3 = 0;
+    double xmid2 = 0;
+    double ymid2 = 0;
+    const GeomDet * det2;
+    int ilad2 = 0;
+    int xmin2 = 0;
+    int xmax2 = 0;
+    int zmin2 = 0;
+    int zmax2 = 0;
+
+
+    edm::OwnVector<TrackingRecHit> recHitVector; // for seed
+
+    std::vector<TransientTrackingRecHit::RecHitPointer> myTTRHvec;
+
+    Trajectory::RecHitContainer coTTRHvec; // for fit, constant
+
+    // loop over recHits on this track:
+
+    for( trackingRecHit_iterator irecHit = iTrack->recHitsBegin();
+	 irecHit != iTrack->recHitsEnd(); ++irecHit ) {
+
+      DetId detId = (*irecHit)->geographicalId();
+
+      uint32_t subDet = detId.subdetId();
+
+      // enum Detector { Tracker=1, Muon=2, Ecal=3, Hcal=4, Calo=5 };
+
+      if( detId.det() != 1 ){
+	cout << "rec hit ID = " << detId.det() << " not in tracker!?!?\n";
+	continue;
+      }
+
+      recHitVector.push_back( (*irecHit)->clone() );
+
+      int xmin = 0;
+      int xmax = 0;
+      int ymin = 0;
+      int ymax = 0;
+
+      double cogp = 0;
+
+      int icol = 0;
+      int irow = 0;
+      int ncol = 0;
+      int nrow = 0;
+      double clch = 0;
+
+      bool halfmod = 0;
+
+      double Q_f_X = 0.0;//first
+      double Q_l_X = 0.0;//last
+      double Q_m_X = 0.0;//middle
+      double etaX = 0;
+
+      double Q_f_Y = 0.0;//first
+      double Q_l_Y = 0.0;//last
+      double Q_m_Y = 0.0;//middle
+
+      if( (*irecHit)->isValid() ) {
+
+	// enum SubDetector{ PixelBarrel=1, PixelEndcap=2 };
+	// enum SubDetector{ TIB=3, TID=4, TOB=5, TEC=6 };
+
+	//if( idbg ) cout << "  hit in " << subDet << endl;
+
+//	h060->Fill( subDet );
+
+	// cast to SiPixelRecHit:
+	// TrackingRecHit -> RecHit2DLocalPos -> BaseSiTrackerRecHit2DLocalPos -> SiPixelRecHit
+
+	if( subDet == 1 ){ // PXB
+
+	  int ilay = PXBDetId(detId).layer();
+	  int ilad = PXBDetId(detId).ladder();
+
+	  if( ilay == 1 ){
+
+	    if(      ilad ==  5 ) halfmod = 1;
+	    else if( ilad ==  6 ) halfmod = 1;
+	    else if( ilad == 15 ) halfmod = 1;
+	    else if( ilad == 16 ) halfmod = 1;
+
+	  }
+
+	  if( ilay == 2 ){
+
+	    if(      ilad ==  8 ) halfmod = 1;
+	    else if( ilad ==  9 ) halfmod = 1;
+	    else if( ilad == 24 ) halfmod = 1;
+	    else if( ilad == 25 ) halfmod = 1;
+
+	  }
+
+	  if( ilay == 3 ){
+
+	    if( ilad == 11 ) halfmod = 1;
+	    if( ilad == 12 ) halfmod = 1;
+	    if( ilad == 33 ) halfmod = 1;
+	    if( ilad == 34 ) halfmod = 1;
+
+	  }
+
+	  if( idbg ) {
+	    cout << "  layer  " << PXBDetId(detId).layer();
+	    cout << ", ladder " << PXBDetId(detId).ladder();
+	    cout << ", module " << PXBDetId(detId).module();
+	    cout << endl;
+	  }
+
+	  const SiPixelRecHit *pixhit = dynamic_cast<const SiPixelRecHit*>( &*(*irecHit) );
+
+	  if( pixhit->hasFilledProb() ){
+	    float clusProb = pixhit->clusterProbability(0);
+
+	    if( idbg ) cout << "  cluster prob " << clusProb << endl;
+	  }
+
+	  // pixel cluster:
+	  // TrackingRecHit -> RecHit2DLocalPos -> BaseSiTrackerRecHit2DLocalPos -> SiPixelRecHit -> SiPixelCluster
+
+	  edm::Ref<edmNew::DetSetVector<SiPixelCluster>, SiPixelCluster> const & clust = pixhit->cluster();
+
+	  if( clust.isNonnull() ) {
+
+	    if( idbg ) {
+	      cout << setprecision(0);
+	      cout << "  charge " << clust->charge();
+	      cout << setprecision(4);
+	      cout << ", cols " << clust->minPixelCol() << " - " << clust->maxPixelCol(); //0..416 = 8*52
+	      cout << " = " << clust->sizeY();
+	      cout << ", rows " << clust->minPixelRow() << " - " << clust->maxPixelRow();//0..159 left and right
+	      cout << " = " << clust->sizeX();
+	      cout << endl;
+	    }
+
+	    // Fetch the pixels vector from the cluster:
+	    const vector<SiPixelCluster::Pixel> & pixelsVec = clust->pixels();
+
+	    // Obtain boundaries in index units:
+	    xmin = clust->minPixelRow();
+	    xmax = clust->maxPixelRow();
+	    ymin = clust->minPixelCol();
+	    ymax = clust->maxPixelCol();
+
+	    // cluster matrix:
+
+	    int QQ[9][99];
+	    for( int ix = 0; ix < 9; ++ix ){
+	      for( int jz = 0; jz < 99; ++jz ){
+		QQ[ix][jz] = 0;
+	      }
+	    }
+	    double xsum = 0;
+	    double qsum = 0;
+
+	    // loop over the pixels:
+
+	    int isize = pixelsVec.size();
+
+	    for( int i = 0;  i < isize; ++i ) {
+
+	      int ix = pixelsVec[i].x - xmin;
+	      int jz = pixelsVec[i].y - ymin;
+	      if( ix > 8 ) ix = 8;
+	      if( jz > 98 ) jz = 98;
+	      QQ[ix][jz] = pixelsVec[i].adc;
+
+	      double pix_adc = pixelsVec[i].adc;
+	      qsum += pix_adc;
+	      xsum += pix_adc * pixelsVec[i].x;
+
+	      // X projection:
+	      if( pixelsVec[i].x == xmin )
+		Q_f_X += pix_adc;
+	      else{
+		if( pixelsVec[i].x == xmax ) 
+		  Q_l_X += pix_adc;
+		else
+		  Q_m_X += pix_adc;
+	      }
+
+//	      if( ! halfmod ) {
+//		h049->Fill( pixelsVec[i].y, pixelsVec[i].x );
+//		h067->Fill( pixelsVec[i].x );//0..159
+//		h068->Fill( pixelsVec[i].x, pix_adc*1E-3 );//weighted
+//	      }
+
+	      // Y projection:
+	      if( pixelsVec[i].y == ymin ) 
+		Q_f_Y += pix_adc;
+	      else{
+		if( pixelsVec[i].y == ymax ) 
+		  Q_l_Y += pix_adc;
+		else 
+		  Q_m_Y += pix_adc;
+	      }
+
+	    }//loop over pixels
+
+	    etaX = ( Q_f_X - Q_l_X ) / ( Q_f_X + Q_l_X + Q_m_X );
+
+	    cogp = xsum / qsum;
+
+	    clch = clust->charge();//electrons
+	    icol = clust->minPixelCol();
+	    irow = clust->minPixelRow();
+	    ncol = clust->sizeY();
+	    nrow = clust->sizeX();
+
+	    if( ncol > 5 && idbg ){
+	      cout << setprecision(1);
+	      cout.setf(ios::showpoint);
+	      cout.setf(ios::uppercase);
+	      //cout.setf(ios::scientific);
+	      cout.setf(ios::fixed);
+	      cout << "  dip " << setw(5) << dip*wt;
+	      cout << setprecision(4);
+	      cout << ", layer  " << PXBDetId(detId).layer();
+	      cout << ", ladder " << PXBDetId(detId).ladder();
+	      cout << ", module " << PXBDetId(detId).module();
+	      cout << ", x " << xmin << " - " << xmax;
+	      cout << ", z " << ymin << " - " << ymax;
+	      cout << endl;
+	      for( int ix = 0; ix < min( 9, nrow ); ++ix ){
+		cout << "    row " << setw(3) << ix + xmin;
+		for( int jz = 0; jz < min( 99, ncol ); ++jz ){
+		  cout << setw(6) << QQ[ix][jz] / 100;
+		}
+		cout << endl;
+	      }
+	    }//long ncol
+	    //
+	    //dip -7.E+01, layer  1, ladder 18, module 2, x 148 - 149, z 141 - 148
+	    //row 148     0     0     0     0     0     0    75    78
+	    //row 149   191   164   111   166    98    96   150     0
+	    //
+	    //dip 8.E+01, layer  1, ladder 9, module 8, x 21 - 22, z 368 - 375
+	    //row  21     0     0     0     0     0     0     0    84
+	    //row  22   259   171   113   115   144   106   161     0
+	    //
+	    //dip -8.E+01, layer  1, ladder 8, module 1, x 8 - 10, z 279 - 290
+	    //row   8     0     0     0     0     0     0     0     0     0     0    70    99
+	    //row   9     0     0    91   129   131   112    97    97   146   134   107     0
+	    //row  10    55   107    56     0     0     0     0     0     0     0     0     0
+	    //
+	    //dip 8.E+01, layer  1, ladder 2, module 7, x 139 - 140, z 135 - 144
+	    //row 139    94   107   173    52     0     0     0     0     0     0
+	    //row 140     0     0     0    70   121   128   116   132    99    91
+	    //
+	    //dip -7.E+01, layer  2, ladder 10, module 2, x 139 - 140, z 408 - 415
+	    //row 139    50   397   107   100    71     0     0     0
+	    //row 140     0     0     0     0    48   130   246   239
+ 
+//	    h070->Fill( clch/1E3 );
+//	    h071->Fill( clch/1E3*cos(dip) );
+//	    h072->Fill( ncol );
+//	    h073->Fill( nrow );
+//	    h074->Fill( dip*wt, ncol );
+//	    h075->Fill( dip*wt, nrow );
+//	    if( nrow == 2 ) h076->Fill( etaX );
+//
+	  }//clust nonNull
+
+	}//PXB
+
+      }//valid
+
+      // build transient hit: (from what?)
+
+      TransientTrackingRecHit::RecHitPointer transRecHit = hitBuilder->build( &*(*irecHit), initialTSOS);
+
+      myTTRHvec.push_back( transRecHit );
+      coTTRHvec.push_back( transRecHit );
+
+      if( ! (*irecHit)->isValid() ) continue;
+
+      double xloc = transRecHit->localPosition().x();// 1st meas coord
+      double yloc = transRecHit->localPosition().y();// 2nd meas coord or zero
+      //double zloc = transRecHit->localPosition().z();// up, always zero
+
+      double vxloc = transRecHit->localPositionError().xx();//covariance
+      double vyloc = transRecHit->localPositionError().yy();//covariance
+
+      double gX = transRecHit->globalPosition().x();
+      double gY = transRecHit->globalPosition().y();
+      double gZ = transRecHit->globalPosition().z();
+
+      if( transRecHit->canImproveWithTrack() ) {//use z from track to apply alignment
+
+	//if( idbg ) cout << "  try to improve\n";
+
+	TrajectoryStateOnSurface propTSOS = thePropagator->propagate( initialTSOS, transRecHit->det()->surface() );
+
+	if( propTSOS.isValid() ){
+
+	  //if( idbg ) cout << "  have propTSOS\n";
+
+	  TransientTrackingRecHit::RecHitPointer preciseHit = transRecHit->clone(propTSOS);
+
+	  //if( idbg ) cout << "  have preciseHit\n";
+
+	  xloc = preciseHit->localPosition().x();// 1st meas coord
+	  yloc = preciseHit->localPosition().y();// 2nd meas coord or zero
+	  // zloc = preciseHit->localPosition().z();// up, always zero
+
+	  vxloc = preciseHit->localPositionError().xx();//covariance
+	  vyloc = preciseHit->localPositionError().yy();//covariance
+
+	  if( idbg ) {
+	    cout << "  improved hit in " << subDet;
+	    cout << setprecision(4);
+	    cout << ", xloc from " << transRecHit->localPosition().x();
+	    cout << " to " << preciseHit->localPosition().x();
+	    cout << ", yloc from " << transRecHit->localPosition().y();
+	    cout << " to " << preciseHit->localPosition().y();
+	    cout << endl;
+	  }
+
+	  gX = preciseHit->globalPosition().x();
+	  gY = preciseHit->globalPosition().y();
+	  gZ = preciseHit->globalPosition().z();
+
+	}//valid propTSOS
+	else{
+	  if( idbg ) cout << "  propTSOS not valid\n";
+	}
+      }//canImprove
+
+      double gF = atan2( gY, gX );
+      double gR = sqrt( gX*gX + gY*gY );
+
+    //  h061->Fill( xloc );
+    //  h062->Fill( yloc );
+    //  h063->Fill( gR );
+    //  h064->Fill( gF*wt );
+    //  h065->Fill( gZ );
+
+      if( subDet == PixelSubdetector::PixelBarrel ||
+	  subDet == StripSubdetector::TIB ||
+	  subDet == StripSubdetector::TOB ) { // barrel
+
+//	h066->Fill( gX, gY );
+      }
+
+      if( gR < rmin ) {
+	rmin = gR;
+	innerDetId = detId.rawId();
+      }
+
+      double phiN = transRecHit->det()->surface().normalVector().barePhi();//normal vector
+
+      double xmid = transRecHit->det()->position().x();
+      double ymid = transRecHit->det()->position().y();
+
+      // PXB:
+
+      if( subDet == PixelSubdetector::PixelBarrel ) {
+
+	double xpix = fmod( xloc+0.82, 0.01 );// xpix = 0..0.01
+
+//	h080->Fill( xpix*1E4 );
+//	if( nrow == 2 )
+//	  h081->Fill( xpix*1E4 );
+//	else
+//	  h082->Fill( xpix*1E4 );
+//
+//	if( nrow == 2 ) h083->Fill( xpix*1E4, etaX );
+//
+	double df = phiN - gF;//normal vector vs position vector: inwards or outwards
+
+	// take care of cut at +180/-180:
+
+	if( df > pi ) df -= twopi;
+	else if( df < -pi ) df += twopi;
+
+	// outward/inward have different Lorentz drift:
+
+//	if( nrow == 2 ) {
+//	  if( abs(df) < pihalf ) // outward
+//	    h084->Fill( xpix*1E4, etaX );
+//	  else // inward, identical
+//	    h085->Fill( xpix*1E4, etaX ); // identical
+//	}
+//
+//	if( nrow == 1 ) h086->Fill( xloc );
+//	if( nrow == 2 ) h087->Fill( xloc );
+
+	int ilay = PXBDetId(detId).layer();
+	int ilad = PXBDetId(detId).ladder();
+	int imod = PXBDetId(detId).module();
+
+	if( idbg ) {
+	  cout << "  xloc " << xloc;
+	  cout << ", cogp " << cogp;
+	  double cogx = (cogp + 0.5 - 80) * 0.01 - 0.0054;
+	  if( cogp < 79 ) cogx -= 0.01; // big pix
+	  if( cogp > 80 ) cogx += 0.01; // big pix
+	  cout << ", cogx " << cogx;
+	  cout << ", dx = " << cogx - xloc;
+	  cout << endl;
+	}
+
+//	h100->Fill( ilay ); // 1,2,3
+
+	if( ilay == 2 ) {
+
+	  n1++;
+	  xPXB1 = gX;
+	  yPXB1 = gY;
+	  zPXB1 = gZ;
+	  uPXB1 = xloc;
+	  vPXB1 = yloc;
+	  ePXB1 = sqrt( vxloc );
+	  fPXB1 = sqrt( vyloc );
+	  phiN1 = phiN;
+	  clch1 = clch;
+	  ncol1 = ncol;
+	  nrow1 = nrow;
+	  etaX1 = etaX;
+	  cogp1 = cogp;
+
+//	  h101->Fill( ilad );// 1..20
+//	  h102->Fill( imod );// 1..8
+//
+//	  h103->Fill( gR ); // <R1> = 4.36 cm
+//	  h104->Fill( gF*wt );
+//	  h105->Fill( gZ );
+//
+//	  h106->Fill( gF*wt, gZ ); // phi-z of hit
+
+	  if(      ilad ==  5 ) halfmod = 1;
+	  else if( ilad ==  6 ) halfmod = 1;
+	  else if( ilad == 15 ) halfmod = 1;
+	  else if( ilad == 16 ) halfmod = 1;
+
+//	  if( !halfmod ) h107->Fill( xloc, yloc ); // hit within one module
+
+	  // track impact parameter to beam:
+
+
+	  // my crossings:
+
+	  for( int icrss = 0; icrss < ncrss; ++icrss ){
+
+	    double fcrss = atan2( ycrss[icrss], xcrss[icrss] );
+	    double df = gF - fcrss;
+	    if( df > pi ) df -= twopi;
+	    else if( df < -pi ) df += twopi;
+	    double du = gR*df;
+	    double dz = gZ - zcrss[icrss];
+
+//	    if( abs(du) < 0.01 && abs(dz) < 0.05 ) h111->Fill( gX, gY );
+//	    h112->Fill( du*1E4 );
+//	    h113->Fill( dz*1E4 );
+//
+//	    if( abs(dz) < 0.02 ) h114->Fill( du*1E4 );
+//	    if( abs(du) < 0.01 ) h115->Fill( dz*1E4 );
+
+	  }//crss
+
+	}//PXB1
+     }
+
+
+         if( subDet == PixelSubdetector::PixelEndcap) {
+
+            int idisk = PXFDetId(detId).disk();
+
+            int iblade = PXFDetId(detId).blade();
+            int ipanel =  PXFDetId(detId).panel();
+            int imodule =   PXFDetId(detId).module();
+
+
+	if( idisk == 1 ){
+
+	  n2++;
+	  xPXB2 = gX; // precise hit in CMS global coordinates
+	  yPXB2 = gY;
+	  zPXB2 = gZ;
+	  uPXB2 = xloc; // precise hit in local coordinates (w.r.t. sensor center)
+	  vPXB2 = yloc;
+	  phiN2 = phiN;
+	  ePXB2 = sqrt( vxloc );
+	  fPXB2 = sqrt( vyloc );
+	  clch2 = clch; // cluster charge [e]
+	  ncol2 = ncol;
+	  nrow2 = nrow;
+	  etaX2 = etaX;
+	  cogp2 = cogp;
+	  xmid2 = xmid; // middle of sensor in global CMS coordinates
+	  ymid2 = ymid;
+	  xmin2 = xmin;
+	  xmax2 = xmax;
+	  zmin2 = ymin;
+	  zmax2 = ymax;
+
+	  det2 = transRecHit->det();
+//
+//	  h201->Fill( ilad );// 1..32
+//	  h202->Fill( imod );//1..8
+//
+//	  h203->Fill( gR ); // <R2> = 7.28 cm
+//	  h204->Fill( gF*wt );
+//	  h205->Fill( gZ );
+//
+//	  h206->Fill( gF*wt, gZ ); // phi-z of hit
+
+
+	}//PXB2
+
+	if( idisk == 2 ){
+
+	  n3++;
+	  xPXB3 = gX;
+	  yPXB3 = gY;
+	  zPXB3 = gZ;
+	  uPXB3 = xloc;
+	  vPXB3 = yloc;
+	  ePXB3 = sqrt( vxloc );
+	  fPXB3 = sqrt( vyloc );
+	  phiN3 = phiN;
+	  clch3 = clch;
+	  ncol3 = ncol;
+	  nrow3 = nrow;
+	  etaX3 = etaX;
+	  cogp3 = cogp;
+
+//	  h301->Fill( ilad );//1..44
+//	  h302->Fill( imod );//1..8
+//
+//	  h303->Fill( gR ); // <R3> = 10.18 cm
+//	  h304->Fill( gF*wt );
+//	  h305->Fill( gZ );
+//
+//	  h306->Fill( gF*wt, gZ ); // phi-z of hit
+//
+//	  if( ilad == 11 ) halfmod = 1;
+//	  if( ilad == 12 ) halfmod = 1;
+//	  if( ilad == 33 ) halfmod = 1;
+//	  if( ilad == 34 ) halfmod = 1;
+//
+//	  if( !halfmod ){
+//	    h307->Fill( xloc, yloc ); // hit within one module
+//	  }
+
+	}//PXB3
+
+      }//PXB
+
+    }//loop rechits
+
+    //if( pt < 0.75 ) continue;// curls up
+
+    //------------------------------------------------------------------------
+    // refit the track:
+
+    //edm::RefToBase<TrajectorySeed> seed = iTrack->seedRef(); // not present in RECO
+
+    //if( idbg ) cout << "  prepare refit\n";
+
+    PTrajectoryStateOnDet PTraj = trajectoryStateTransform::persistentState( initialTSOS, innerDetId );
+    const TrajectorySeed seed( PTraj, recHitVector, alongMomentum );
+
+    //if( idbg ) cout << "  have seed\n";
+
+    std::vector<Trajectory> refitTrajectoryCollection = theFitter->fit( seed, coTTRHvec, initialTSOS );
+
+    if( refitTrajectoryCollection.size() > 0 ) { // should be either 0 or 1            
+
+      const Trajectory& refitTrajectory = refitTrajectoryCollection.front();
+
+      // Trajectory.measurements:
+
+      Trajectory::DataContainer refitTMs = refitTrajectory.measurements();
+
+      if( idbg ) {
+	cout << "  refitTrajectory has " << refitTMs.size() <<" hits in subdet";
+      }
+
+      // hits in subDet:
+
+      if( idbg ) {
+
+	for( Trajectory::DataContainer::iterator iTM = refitTMs.begin();
+	     iTM != refitTMs.end(); iTM++ ) {
+
+	  TransientTrackingRecHit::ConstRecHitPointer iTTRH = iTM->recHit();
+	  if( iTTRH->hit()->isValid() ){
+	    cout << "  " << iTTRH->geographicalId().subdetId();
+	  }
+	}
+	cout << endl;
+
+	cout << "         pt " << refitTrajectory.geometricalInnermostState().globalMomentum().perp();
+	cout << ", eta " << refitTrajectory.geometricalInnermostState().globalMomentum().eta();
+	cout << ", phi " << refitTrajectory.geometricalInnermostState().globalMomentum().barePhi()*wt;
+	cout << ", at R " << refitTrajectory.geometricalInnermostState().globalPosition().perp();
+	cout << ", z " << refitTrajectory.geometricalInnermostState().globalPosition().z();
+	cout << ", phi " << refitTrajectory.geometricalInnermostState().globalPosition().barePhi()*wt;
+	cout << endl;
+
+      }//dbg
+
+      // trajectory residuals:
+
+      for( Trajectory::DataContainer::iterator iTM = refitTMs.begin();
+	   iTM != refitTMs.end(); iTM++ ) {
+
+	if( ! iTM->recHit()->isValid() ) continue;
+
+	DetId detId = iTM->recHit()->geographicalId();
+
+	uint32_t subDet = detId.subdetId();
+
+	// enum SubDetector{ PixelBarrel=1, PixelEndcap=2 };
+	// enum SubDetector{ TIB=3, TID=4, TOB=5, TEC=6 };
+
+	double xHit = iTM->recHit()->localPosition().x(); // primary measurement direction
+	double yHit = iTM->recHit()->localPosition().y(); // always 0 in strips
+
+	int ilay = 0;
+	if( detId.subdetId() == 1 ){
+	  ilay = PXBDetId( detId ).layer();
+	}
+	/*
+	if( subDet == 1 && idbg ){//1=PXB
+	  cout << "  PXB layer " << ilay << endl;
+	}
+	*/
+
+	double dx = xHit - iTM->predictedState().localPosition().x();
+	double dy = yHit - iTM->predictedState().localPosition().y();
+	double vxh = iTM->recHit()->localPositionError().xx();//covariance
+	double vxt = iTM->predictedState().localError().positionError().xx();//
+
+	//if( subDet == 1 && idbg ){//1=PXB
+	if( subDet == 4 && idbg ){//4=TID
+	  cout << "  predictdStateResid = " << dx*1E4 << " um";
+	  cout << ", eh = " << sqrt(vxh)*1E4 << " um";
+	  cout << ", et = " << sqrt(vxt)*1E4 << " um";
+	  cout << endl;
+	}
+
+	TrajectoryStateOnSurface combinedPredictedState =
+	  TrajectoryStateCombiner().combine( iTM->forwardPredictedState(), iTM->backwardPredictedState() );
+
+	if( ! combinedPredictedState.isValid() ) continue;//skip hit
+
+	if( jdbg ) cout << "  have combinedPredictedState\n";
+
+	double R = combinedPredictedState.globalPosition().perp();
+	double F = combinedPredictedState.globalPosition().barePhi();
+	double Z = combinedPredictedState.globalPosition().z();
+
+	double xptch;
+	double yptch;	
+
+	if( subDet <  3 ){//1,2=pixel
+	  PixelTopology & pixelTopol = (PixelTopology&) iTM->recHit()->detUnit()->topology();
+	  xptch = pixelTopol.pitch().first;
+	  yptch = pixelTopol.pitch().second;
+	}
+	else {//strip
+	  StripTopology & stripTopol = (StripTopology&) iTM->recHit()->detUnit()->topology();
+	  xptch = stripTopol.localPitch( combinedPredictedState.localPosition() );
+	  yptch = stripTopol.localStripLength( combinedPredictedState.localPosition() );
+	}
+
+//	if( subDet == 4 && idbg ){//4=TID
+//	  cout << "  TID side " << TIDDetId(detId).side();
+//	  cout << ", disk " << TIDDetId(detId).diskNumber();
+//	  cout << ", ring " << TIDDetId(detId).ringNumber();
+//	  cout << ", stereo " << TIDDetId(detId).isStereo();
+//	  cout << endl;
+//	  cout << setprecision(4);
+//	  cout << "  xHit " << xHit;
+//	  cout << ", yHit " << yHit;
+//	  cout << setprecision(1);
+//	  cout << ", pitch " << xptch*1E4 << " um";
+//	  cout << setprecision(4);
+//	  cout << endl;
+//	}
+
+	dx = xHit - combinedPredictedState.localPosition().x(); //x = primary measurement
+	dy = yHit - combinedPredictedState.localPosition().y(); //
+	vxh = iTM->recHit()->localPositionError().xx();//covariance
+	vxt = combinedPredictedState.localError().positionError().xx();//
+
+	// angles of incidence:
+	// local z = upwards = normal vector
+	// local x = primary measurement direction
+	// local y = secondary measurement direction
+
+	double alf_inc = atan2( combinedPredictedState.localDirection().x(), combinedPredictedState.localDirection().z() );
+	double bet_inc = atan2( combinedPredictedState.localDirection().y(), combinedPredictedState.localDirection().z() );
+
+	double phiinc = alf_inc;
+	if( phiinc > pihalf ) phiinc -= pi;
+	else if( phiinc < -pihalf ) phiinc += pi;
+
+	if( bet_inc > pihalf ) bet_inc -= pi;
+	else if( bet_inc < -pihalf ) bet_inc += pi;
+
+	//if( subDet == 1 && idbg ){//1=PXB
+	if( subDet == 4 && idbg ){//4=TID
+
+	  cout << setprecision(1);
+	  cout << "  combinedStateResid = " << dx*1E4 << " um";
+	  cout << ", eh = " << sqrt(vxh)*1E4 << " um";
+	  cout << ", et = " << sqrt(vxt)*1E4 << " um";
+	  cout << ", dy = " << dy*1E4 << " um";
+	  cout << setprecision(4);
+	  cout << ", track at x " << combinedPredictedState.localPosition().x();
+	  cout << ", y " << combinedPredictedState.localPosition().y();
+	  cout << endl;
+	}
+
+	// use Topology. no effect in PXB, essential in TID, TEC
+
+	const Topology* theTopology = &(iTM->recHit()->detUnit()->topology() );
+
+	// MeasurementPoint [pitch] (like channel number)
+
+        // TODO: Use the measurementPosition(point, trackdir) version of this function in order to take bows into account!
+	MeasurementPoint hitMeasurement = theTopology->measurementPosition( iTM->recHit()->localPosition() );
+
+	// TID and TEC have trapezoidal detectors:
+	// translation from channel number into local x depends on local y
+	// track prediction has local x,y => can convert into proper channel number MeasurementPoint:
+
+        // TODO: Use the measurementPosition(point, trackdir) version of this function in order to take bows into account!
+	MeasurementPoint combinedPredictedMeasurement = theTopology->measurementPosition( combinedPredictedState.localPosition() );
+
+	dx = hitMeasurement.x() - combinedPredictedMeasurement.x(); //in units of pitch
+	dy = hitMeasurement.y() - combinedPredictedMeasurement.y(); //in units of pitch
+	dx = dx * xptch;//convert back into [cm] using local pitch
+	dy = dy * yptch;//[cm]
+
+	if( jdbg ) cout << "  have combinedPredictedMeasurement\n";
+
+	//if( subDet == 1 && idbg ){//1=PXB
+//	if( subDet == 4 && idbg ){//4=TID
+//
+//	  cout << setprecision(1);
+//	  cout << "  topologyStateResid = " << dx*1E4 << " um";
+//	  cout << setprecision(4);
+//	  cout << ", hit at x " << hitMeasurement.x();
+//	  cout << ", y " << hitMeasurement.y();
+//	  cout << ", track at x " << combinedPredictedMeasurement.x();
+//	  cout << ", y " << combinedPredictedMeasurement.y();
+//	  cout << endl;
+//	}
+
+
+	// use topology: needed for TEC
+
+	double xx = hitMeasurement.x();
+	double yy;
+	if( subDet < 3 ) // pixel is 2D
+	  yy = hitMeasurement.y();
+	else // strips are 1D
+	  yy = combinedPredictedMeasurement.y();
+
+	MeasurementPoint mp( xx, yy );
+
+	//2012 StripTopology & stripTopol = (StripTopology&) iTM->recHit()->detUnit()->topology();
+
+	Surface::LocalPoint lp = theTopology->localPosition( mp );
+	//2012 Surface::LocalPoint lp = stripTopol.localPosition( mp ); // makes no difference in TEC
+
+	//const GeomDet * myGeomDet = pTG->idToDet( detId );
+	const GeomDet * myGeomDet = iTM->recHit()->det(); // makes no difference in TEC
+	Surface::GlobalPoint gp = myGeomDet->toGlobal( lp );
+
+	double gX = gp.x();
+	double gY = gp.y();
+	double gZ = gp.z();
+
+ 	//double phiN = myGeomDet->surface().normalVector().barePhi();//normal vector
+ 	double phiN = iTM->recHit()->det()->surface().normalVector().barePhi();//normal vector
+
+//	if( idbg && subDet == StripSubdetector::TEC ) {
+//	  cout << "  TEC hit ";
+//	  cout << ", side " << TECDetId(detId).side();
+//	  cout << ", wheel " << TECDetId(detId).wheel();
+//	  cout << ", ring " << TECDetId(detId).ring();
+//	  cout << ", petal " << TECDetId(detId).petalNumber();
+//	  cout << ", order " << TECDetId(detId).order();//1=back or 2=front
+//	  cout << ", module " << TECDetId(detId).module();
+//	  cout << ", stereo " << TECDetId(detId).isStereo();
+//	  cout << ", comp " << myGeomDet->components().size(); //always 0
+//	  cout << endl;
+//	}
+
+	//2012: overwrite PXB global coordinates once more, using topology:
+
+	if( subDet == PixelSubdetector::PixelBarrel ) {
+
+	  int ilay = PXBDetId(detId).layer();
+
+	  if( ilay == 2 ) {
+	    xPXB1 = gX;
+	    yPXB1 = gY;
+	    zPXB1 = gZ;
+	  }
+         }
+
+       else  if( subDet == PixelSubdetector::PixelEndcap) {
+
+            int idisk = PXFDetId(detId).disk();
+
+            int iblade = PXFDetId(detId).blade();
+            int ipanel =  PXFDetId(detId).panel();
+            int imodule =   PXFDetId(detId).module();
+
+
+	  if( idisk == 1 ) {
+	    xPXB2 = gX;
+	    yPXB2 = gY;
+	    zPXB2 = gZ;
+
+          cout<<"gx="<<gX<<"  gy="<<gY<<"   gz="<<gZ<<endl;
+
+
+	  }
+
+	  else if( idisk == 2 ) {
+	    xPXB3 = gX;
+	    yPXB3 = gY;
+	    zPXB3 = gZ;
+	  }
+
+	}
+     
+
+      }//loop iTM
+
+    }//refitted trajectory
+
+    //if( pt < 0.75 ) continue;// curls up
+
+    //------------------------------------------------------------------------
+    // refit once more, leaving out hit in 2nd PXB:
+
+    double kap2 = 0;
+    bool refit2valid = 0;
+
+    if( n2 > 0 ){
+
+      Trajectory::RecHitContainer nyTTRHvec; // for fit
+
+      for( vector<TransientTrackingRecHit::RecHitPointer>::iterator iTTRH = myTTRHvec.begin();
+	   iTTRH != myTTRHvec.end(); ++iTTRH ) {
+
+	if( idbg == 9 ) {
+	  cout << "  hit " << distance( (vector<TransientTrackingRecHit::RecHitPointer>::iterator)myTTRHvec.begin(), iTTRH );
+	  if( (*iTTRH)->hit()->isValid() ){
+	    cout << ": subdet " << (*iTTRH)->hit()->geographicalId().subdetId();
+	    cout << ", weight " << (*iTTRH)->weight(); // default weight is 1
+	    cout << endl;
+	  }
+	  else cout << " not valid\n";
+	}
+
+	int iuse = 1;
+	if( (*iTTRH)->hit()->isValid() ){
+	  if( (*iTTRH)->hit()->geographicalId().subdetId() == 1 ){ //PXB
+	    if( PXBDetId( (*iTTRH)->hit()->geographicalId() ).layer() == 2 ) iuse = 0; // skip PXB2: unbiased track
+	  }
+	}
+	if( iuse ) nyTTRHvec.push_back( *iTTRH );
+      }//copy
+
+      if( idbg ) {
+	cout << "  all hits " << myTTRHvec.size();
+	cout << ", without PXB2 " << nyTTRHvec.size();
+	cout << endl;
+      }
+
+      // re-fit without PXB2:
+
+      std::vector<Trajectory> refitTrajectoryVec2 = theFitter->fit( seed, nyTTRHvec, initialTSOS );
+
+      if( refitTrajectoryVec2.size() > 0 ) { // should be either 0 or 1            
+
+	const Trajectory& refitTrajectory2 = refitTrajectoryVec2.front();
+
+	// Trajectory.measurements:
+
+	Trajectory::DataContainer refitTMvec2 = refitTrajectory2.measurements();
+
+	if( idbg ) {
+	  cout << "  refitTrajectory2 has " << refitTMvec2.size() <<" hits in subdet";
+	}
+
+	for( Trajectory::DataContainer::iterator iTM = refitTMvec2.begin();
+	     iTM != refitTMvec2.end(); iTM++ ) {
+
+	  TransientTrackingRecHit::ConstRecHitPointer iTTRH = iTM->recHit();
+	  if( iTTRH->hit()->isValid() ){
+	    if( idbg ) cout << "  " << iTTRH->geographicalId().subdetId();
+	  }
+	}
+	if( idbg ) cout << endl;
+
+	if( idbg ) {
+	  cout << "  ndof " << refitTrajectory2.ndof();
+	  cout << ", found " << refitTrajectory2.foundHits();
+	  cout << ", missing " << refitTrajectory2.lostHits();
+	  cout << ", chi2 " << refitTrajectory2.chiSquared();
+	  cout << ", /ndof " << refitTrajectory2.chiSquared() / refitTrajectory2.ndof();
+	  cout << endl;
+	}
+
+	if( idbg ) {
+	  cout << "         pt " << refitTrajectory2.geometricalInnermostState().globalMomentum().perp();
+	  cout << ", eta " << refitTrajectory2.geometricalInnermostState().globalMomentum().eta();
+	  cout << ", phi " << refitTrajectory2.geometricalInnermostState().globalMomentum().barePhi()*wt;
+	  cout << ", at R " << refitTrajectory2.geometricalInnermostState().globalPosition().perp();
+	  cout << ", z " << refitTrajectory2.geometricalInnermostState().globalPosition().z();
+	  cout << ", phi " << refitTrajectory2.geometricalInnermostState().globalPosition().barePhi()*wt;
+	  cout << endl;
+	}
+	refit2valid = 1;
+	kap2 = refitTrajectory2.geometricalInnermostState().transverseCurvature();
+
+	// now use it!
+
+      }//refit2
+      else 
+	if( idbg ) cout << "  no refit\n";
+
+    }// n2 > 0
+
+    //------------------------------------------------------------------------
+    // 1-2-3 pixel triplet:
+
+    if( n1*n2*n3 > 0 ) {
+
+      { // let's open a scope, so we can redefine the variables further down
+
+	if( jdbg ) cout << "  triplet 1+3 -> 2\n";
+
+	double f2 = atan2( yPXB2, xPXB2 );//position angle in layer 2
+
+	double ax = xPXB3 - xPXB1;
+	double ay = yPXB3 - yPXB1;
+	double aa = sqrt( ax*ax + ay*ay ); // from 1 to 3
+
+	double xmid = 0.5 * ( xPXB1 + xPXB3 );
+	double ymid = 0.5 * ( yPXB1 + yPXB3 );
+	double bx = xPXB2 - xmid;
+	double by = yPXB2 - ymid;
+	double bb = sqrt( bx*bx + by*by ); // from mid point to point 2
+
+//	h406->Fill( hp.numberOfValidTrackerHits() );
+//	h407->Fill( hp.numberOfValidPixelBarrelHits() );
+//	h408->Fill( hp.trackerLayersWithMeasurement() );
+
+	// Author: Johannes Gassner (15.11.1996)
+	// Make track from 2 space points and kappa (cmz98/ftn/csmktr.f)
+	// Definition of the Helix :
+
+	// x( t ) = X0 + KAPPA^-1 * SIN( PHI0 + t )
+	// y( t ) = Y0 - KAPPA^-1 * COS( PHI0 + t )          t > 0
+	// z( t ) = Z0 + KAPPA^-1 * TAN( DIP ) * t
+
+	// Center of the helix in the xy-projection:
+
+	// X0 = + ( DCA - KAPPA^-1 ) * SIN( PHI0 )
+	// Y0 = - ( DCA - KAPPA^-1 ) * COS( PHI0 )
+
+	// Point 1 must be in the inner layer, 3 in the outer:
+
+	double r1 = sqrt( xPXB1*xPXB1 + yPXB1*yPXB1 );
+	double r3 = sqrt( xPXB3*xPXB3 + yPXB3*yPXB3 );
+
+	if( r3-r1 < 2.0 ) cout << "warn r1 = " << r1 << ", r3 = " << r3 << endl;
+
+	// Calculate the centre of the helix in xy-projection that
+	// transverses the two spacepoints. The points with the same
+	// distance from the two points are lying on a line.
+	// LAMBDA is the distance between the point in the middle of
+	// the two spacepoints and the centre of the helix.
+
+	// we already have kap and rho = 1/kap
+
+	double lam = sqrt( -0.25 + 
+			   rho*rho / ( ( xPXB1 - xPXB3 )*( xPXB1 - xPXB3 ) + ( yPXB1 - yPXB3 )*( yPXB1 - yPXB3 ) ) );
+
+	// There are two solutions, the sign of kap gives the information
+	// which of them is correct:
+
+	if( kap > 0 ) lam = -lam;
+
+	// ( X0, Y0 ) is the centre of the circle
+	// that describes the helix in xy-projection:
+
+	double x0 =  0.5*( xPXB1 + xPXB3 ) + lam * ( -yPXB1 + yPXB3 );
+	double y0 =  0.5*( yPXB1 + yPXB3 ) + lam * (  xPXB1 - xPXB3 );
+
+	// Calculate theta:
+
+	double num = ( yPXB3 - y0 ) * ( xPXB1 - x0 ) - ( xPXB3 - x0 ) * ( yPXB1 - y0 );
+	double den = ( xPXB1 - x0 ) * ( xPXB3 - x0 ) + ( yPXB1 - y0 ) * ( yPXB3 - y0 );
+	double tandip = kap * ( zPXB3 - zPXB1 ) / atan( num / den );
+	double udip = atan(tandip);
+	//double utet = pihalf - udip;
+
+	// To get phi0 in the right interval one must distinguish
+	// two cases with positve and negative kap:
+
+	double uphi;
+	if( kap > 0 ) uphi = atan2( -x0,  y0 );
+	else          uphi = atan2(  x0, -y0 );
+
+	// The distance of the closest approach DCA depends on the sign
+	// of kappa:
+
+	double udca;
+	if( kap > 0 ) udca = rho - sqrt( x0*x0 + y0*y0 );
+	else          udca = rho + sqrt( x0*x0 + y0*y0 );
+
+	// angle from first hit to dca point:
+
+	double dphi = atan( ( ( xPXB1 - x0 ) * y0 - ( yPXB1 - y0 ) * x0 )
+			  / ( ( xPXB1 - x0 ) * x0 + ( yPXB1 - y0 ) * y0 ) );
+
+	double uz0 = zPXB1 + tandip * dphi * rho;
+//
+//	h401->Fill( zPXB2 );
+//	h402->Fill( uphi - iTrack->phi() );
+//	h403->Fill( udca - iTrack->d0() );
+//	h404->Fill( udip - iTrack->lambda() );
+//	h405->Fill( uz0  - iTrack->dz() );
+
+	// interpolate to middle hit:
+	// cirmov
+	// we already have rinv = -kap
+
+	double cosphi = cos(uphi);
+	double sinphi = sin(uphi);
+	double dp = -xPXB2*sinphi + yPXB2*cosphi + udca;
+	double dl = -xPXB2*cosphi - yPXB2*sinphi;
+	double sa = 2*dp + rinv * ( dp*dp + dl*dl );
+	double dca2 = sa / ( 1 + sqrt(1 + rinv*sa) );// distance to hit 2
+	double ud = 1 + rinv*udca;
+	double phi2 = atan2( -rinv*xPXB2 + ud*sinphi, rinv*yPXB2 + ud*cosphi );//direction
+
+	double phiinc = phi2 - phiN2;//angle of incidence in rphi w.r.t. normal vector
+
+	// phiN alternates inward/outward
+	// reduce phiinc:
+
+	if( phiinc > pihalf ) phiinc -= pi;
+	else if( phiinc < -pihalf ) phiinc += pi;
+
+	// arc length:
+
+	double xx = xPXB2 + dca2 * sin(phi2); // point on track
+	double yy = yPXB2 - dca2 * cos(phi2);
+
+	double vx = xx - xmid2;//from module center
+	double vy = yy - ymid2;
+	double vv = sqrt( vx*vx + vy*vy );
+
+	double f0 = uphi;//
+	double kx = kap*xx;
+	double ky = kap*yy;
+	double kd = kap*udca;
+
+	// Solve track equation for s:
+
+	double dx = kx - (kd-1)*sin(f0);
+	double dy = ky + (kd-1)*cos(f0);
+	double ks = atan2( dx, -dy ) - f0;// turn angle
+
+	// Limit to half-turn:
+
+	if(      ks >  pi ) ks = ks - twopi;
+	else if( ks < -pi ) ks = ks + twopi;
+
+	double s = ks*rho; // signed
+	double uz2 = uz0 + s*tandip; // track z at R2
+	double dz2 = zPXB2 - uz2;
+
+	Surface::GlobalPoint gp2( xx, yy, uz2 );
+	Surface::LocalPoint lp2 = det2->toLocal( gp2 );
+
+	// local x = phi
+	// local y = z in barrel
+	// local z = radial in barrel (thickness)
+
+	double xpix = fmod( uPXB2 + 0.82, 0.01 ); // xpix = 0..0.01 reconstructed
+	double xpx2 = fmod( uPXB2 + 0.82, 0.02 ); // xpix = 0..0.02 reconstructed
+	double xpx1 = fmod( uPXB1 + 0.82, 0.01 ); // xpix = 0..0.01 reconstructed
+	double xpx3 = fmod( uPXB3 + 0.82, 0.01 ); // xpix = 0..0.01 reconstructed
+
+	//double dpix = fmod( uPXB2 + dca2 + 0.82, 0.01 ); // dpix = 0..0.01 predicted
+
+	double vpix = fmod( vv, 0.01 ); // vpix = 0..0.01 predicted
+	if( uPXB2 < 0 ) vpix = -vpix; // vv is unsigned distance from module center
+
+	double lpix = fmod( lp2.x() + 0.82, 0.01 ); // lpix = 0..0.01 predicted
+	double tpix = fmod( lp2.x() + 0.82, 0.02 ); // tpix = 0..0.02 predicted
+
+	double zpix = fmod( lp2.y() + 3.24, 0.015 ); // zpix = 0..0.015 predicted
+	double spix = fmod( lp2.y() + 3.24, 0.03  ); // spix = 0..0.03  predicted
+
+	int smin = zmin2%52; // 0..51 column along z
+	int smax = zmax2%52; // 0..51 column along z
+
+	double cogx = (cogp2 + 0.5 - 80) * 0.01 - 0.0054; // Lorentz shift
+	if( cogp2 < 79 ) cogx -= 0.01; // big pix
+	if( cogp2 > 80 ) cogx += 0.01; // big pix
+
+	double mpix = fmod( cogx + 0.82, 0.01 ); // mpix = 0..0.01 from cluster COG
+	double cogdx = cogx - lp2.x(); // residual
+
+	// hybrid method:
+
+	double hybx = uPXB2; // template
+	if( mpix*1E4 < 20 ) hybx = cogx; // COG
+	if( mpix*1E4 > 75 ) hybx = cogx;
+	//double hpix = fmod( hybx + 0.82, 0.01 ); // hpix = 0..0.01 from cluster hybrid method
+	double hybdx = hybx - lp2.x(); // residual
+
+	bool halfmod = 0;
+	if(      ilad2 ==  8 ) halfmod = 1;
+	else if( ilad2 ==  9 ) halfmod = 1;
+	else if( ilad2 == 24 ) halfmod = 1;
+	else if( ilad2 == 25 ) halfmod = 1;
+
+
+        residue=dca2*1E4 ;
+        final_pt=pt;
+        final_phi=phi;
+
+	if( pt > 4 ) {
+//
+//	  h308->Fill( bb/aa ); // lever arm
+//	  h409->Fill( f2*wt, phiinc*wt );
+	  h410->Fill( dca2*1E4 );
+//	  h411->Fill( dz2*1E4 );
+//
+//	  // pile up study Summer 2011:
+//
+//	  if( nvertex < 3 ) {
+//	    h310->Fill( dca2*1E4 );
+//	    h311->Fill( dz2*1E4 );
+//	  }
+//	  else if( nvertex < 6 ) {
+//	    h312->Fill( dca2*1E4 );
+//	    h313->Fill( dz2*1E4 );
+//	  }
+//	  else if( nvertex < 10 ) {
+//	    h314->Fill( dca2*1E4 );
+//	    h315->Fill( dz2*1E4 );
+//	  }
+//	  else {
+//	    h316->Fill( dca2*1E4 );
+//	    h317->Fill( dz2*1E4 );
+//	    h318->Fill( nvertex );
+//	  } // pile up
+//
+	} // pt > 4
+
+      newtree->Fill();
+
+      }//triplet 1+3 -> 2
+
+      //------------------------------------------------------------------------
+      // Triplet 1+3 -> 2 with refitted track:
+
+      if( refit2valid ){
+
+	if( jdbg ) cout << "  triplet 1+3 -> 2 refitted\n";
+
+	double f2 = atan2( yPXB2, xPXB2 );//position angle in layer 2
+
+	double rho2 = 1/kap2;
+
+	// Calculate the centre of the helix in xy-projection that
+	// transverses the two spacepoints. The points with the same
+	// distance from the two points are lying on a line.
+	// LAMBDA is the distance between the point in the middle of
+	// the two spacepoints and the centre of the helix.
+
+	double lam = sqrt( -0.25 + 
+			   rho2*rho2 / ( ( xPXB1 - xPXB3 )*( xPXB1 - xPXB3 ) + ( yPXB1 - yPXB3 )*( yPXB1 - yPXB3 ) ) );
+
+	// There are two solutions, the sign of kap gives the information
+	// which of them is correct:
+
+	if( kap2 > 0 ) lam = -lam;
+
+	// ( X0, Y0 ) is the centre of the circle
+	// that describes the helix in xy-projection:
+
+	double x0 =  0.5*( xPXB1 + xPXB3 ) + lam * ( -yPXB1 + yPXB3 );
+	double y0 =  0.5*( yPXB1 + yPXB3 ) + lam * (  xPXB1 - xPXB3 );
+
+	// Calculate theta:
+
+	double num = ( yPXB3 - y0 ) * ( xPXB1 - x0 ) - ( xPXB3 - x0 ) * ( yPXB1 - y0 );
+	double den = ( xPXB1 - x0 ) * ( xPXB3 - x0 ) + ( yPXB1 - y0 ) * ( yPXB3 - y0 );
+	double tandip = kap2 * ( zPXB3 - zPXB1 ) / atan( num / den );
+	double udip = atan(tandip);
+	//double utet = pihalf - udip;
+
+	// To get phi0 in the right interval one must distinguish
+	// two cases with positve and negative kap:
+
+	double uphi;
+	if( kap2 > 0 ) uphi = atan2( -x0,  y0 );
+	else          uphi = atan2(  x0, -y0 );
+
+	// The distance of the closest approach DCA depends on the sign
+	// of kappa:
+
+	double udca;
+	if( kap2 > 0 ) udca = rho2 - sqrt( x0*x0 + y0*y0 );
+	else          udca = rho2 + sqrt( x0*x0 + y0*y0 );
+
+	// angle from first hit to dca point:
+
+	double dphi = atan( ( ( xPXB1 - x0 ) * y0 - ( yPXB1 - y0 ) * x0 )
+			  / ( ( xPXB1 - x0 ) * x0 + ( yPXB1 - y0 ) * y0 ) );
+
+	double uz0 = zPXB1 + tandip * dphi * rho2;
+
+//	h451->Fill( zPXB2 );
+//	h452->Fill( uphi - iTrack->phi() );
+//	h453->Fill( udca - iTrack->d0() );
+//	h454->Fill( udip - iTrack->lambda() );
+//	h455->Fill( uz0  - iTrack->dz() );
+
+	// interpolate to middle hit:
+	// cirmov
+
+	double rinv2 = -kap2;
+	double cosphi = cos(uphi);
+	double sinphi = sin(uphi);
+	double dp = -xPXB2*sinphi + yPXB2*cosphi + udca;
+	double dl = -xPXB2*cosphi - yPXB2*sinphi;
+	double sa = 2*dp + rinv2 * ( dp*dp + dl*dl );
+	double dca2 = sa / ( 1 + sqrt(1 + rinv2*sa) );// distance to hit 2
+	double ud = 1 + rinv2*udca;
+	double phi2 = atan2( -rinv2*xPXB2 + ud*sinphi, rinv2*yPXB2 + ud*cosphi );//direction
+
+	double phiinc = phi2 - phiN2;//angle of incidence in rphi w.r.t. normal vector
+
+	// phiN alternates inward/outward
+	// reduce phiinc:
+
+	if( phiinc > pihalf ) phiinc -= pi;
+	else if( phiinc < -pihalf ) phiinc += pi;
+
+	// arc length:
+
+	double xx = xPXB2 + dca2 * sin(phi2); // point on track
+	double yy = yPXB2 - dca2 * cos(phi2);
+
+	double f0 = uphi;//
+	double kx = kap2*xx;
+	double ky = kap2*yy;
+	double kd = kap2*udca;
+
+	// Solve track equation for s:
+
+	double dx = kx - (kd-1)*sin(f0);
+	double dy = ky + (kd-1)*cos(f0);
+	double ks = atan2( dx, -dy ) - f0;// turn angle
+
+	//---  Limit to half-turn:
+
+	if(      ks >  pi ) ks = ks - twopi;
+	else if( ks < -pi ) ks = ks + twopi;
+
+	double s = ks*rho2;// signed
+	double uz2 = uz0 + s*tandip; //track z at R2
+	double dz2 = zPXB2 - uz2;
+
+
+     //   residue_refit=dca2*1E4 ;
+
+//	if( pt > 4 ) {
+//	  h456->Fill( (kap2 - kap) / kap );
+//	  h459->Fill( f2*wt, phiinc*wt );
+//	  h460->Fill( dca2*1E4 );
+//	  h461->Fill( dz2*1E4 );
+//	}
+//
+//	if( pt > 12 ) {
+//
+//	  h470->Fill( dca2*1E4 );
+//	  h471->Fill( dz2*1E4 );
+//
+//	  if( hp.trackerLayersWithMeasurement() > 8 ) {
+//	    h480->Fill( dca2*1E4 );
+//	    h481->Fill( dz2*1E4 );
+//	  }
+//
+//	  if( phiinc*wt > -1 && phiinc*wt < 7 ){
+//	    h490->Fill( dca2*1E4 );
+//	    h491->Fill( dz2*1E4 );
+//	  }
+//
+//	  if( nrow2 == 1 ) h492->Fill( dca2*1E4 );
+//	  else {
+//	    if( nrow2 == 2 ) h493->Fill( dca2*1E4 );
+//	    else {
+//	      if( nrow2 == 3 ) h494->Fill( dca2*1E4 );
+//	      else h495->Fill( dca2*1E4 );
+//	    }
+//	  }
+//
+//	  if( nrow1 == 2 && nrow2 == 2 && nrow3 == 2 ) h496->Fill( dca2*1E4 );
+//
+//	}//pt>12
+//
+//	// residual profiles: alignment check
+//
+//	if( pt > 4 ) {
+//	  h462->Fill( f2*wt, dca2*1E4 );
+//	  h463->Fill( f2*wt, dz2*1E4 );
+//	  
+//	  h464->Fill( zPXB2, dca2*1E4 );
+//	  h465->Fill( zPXB2, dz2*1E4 );
+//	}
+//	h466->Fill( logpt, dca2*1E4 );
+//	h467->Fill( logpt, dz2*1E4 );
+//	if( iTrack->charge() > 0 ) h468->Fill( logpt, dca2*1E4 );
+//	else h469->Fill( logpt, dca2*1E4 );
+//
+//	// profile of abs(dca) gives mean abs(dca):
+//	// mean of abs(Gauss) = 0.7979 * RMS = 1/sqrt(pi/2) 
+//	// => rms = sqrt(pi/2) * mean of abs (sqrt(pi/2) = 1.2533)
+//	// point resolution = 1/sqrt(3/2) * triplet middle residual width
+//	// => sqrt(pi/2)*sqrt(2/3) = sqrt(pi/3) = 1.0233, almost one
+//
+//	if( pt > 4 ) {
+//
+//	  h472->Fill( f2*wt, abs(dca2)*1E4 );
+//	  h473->Fill( f2*wt, abs(dz2)*1E4 );
+//
+//	  h474->Fill( zPXB2, abs(dca2)*1E4 );
+//	  h475->Fill( zPXB2, abs(dz2)*1E4 );
+//
+//	  h478->Fill( udip*wt, abs(dca2)*1E4 );
+//	  h479->Fill( udip*wt, abs(dz2)*1E4 );
+//	  if( abs(dip)*wt > 18 && abs(dip)*wt < 50 ) h482->Fill( dz2*1E4 );
+//
+//	  h484->Fill( phiinc*wt, abs(dca2)*1E4 );
+//
+//	}//pt
+//
+//	if( pt > 0.8 && pt < 1.2 ) { // low pt
+//	  h485->Fill( f2*wt, abs(dca2)*1E4 );
+//	}
+//	h476->Fill( logpt, abs(dca2)*1E4 );
+//	h477->Fill( logpt, abs(dz2)*1E4 );
+//	if( abs(dip)*wt > 18 && abs(dip)*wt < 50 ) h483->Fill( logpt, abs(dz2)*1E4 );
+//
+      }//triplet 1+3 -> 2 refitted
+
+//
+    }//pt cut
+
+
+
+  }// loop over tracks
+
+//  h028->Fill( sumpt );
+//  h029->Fill( sumq );
+//
+}//event
+//----------------------------------------------------------------------
+// method called just after ending the event loop:
+//
+void PxlTest::endJob() {
+
+  std::cout << "end of job after " << myCounters::neve << " events.\n";
+
+}
+
+//define this as a plug-in
+DEFINE_FWK_MODULE(PxlTest);
