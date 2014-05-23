@@ -42,7 +42,8 @@ void final_residue_run(){
         chain->Add("./job.root/Histos/newtree");  
         TH1D *hdh0 = new TH1D("hdh0", "hdh0", 200,-500,500);
 
-        chain->Draw("resid_disk1>>hdh0","final_pt>2");
+        chain->Draw("residue_c>>hdh0","final_pt>2");
+//        chain->Draw("resid_disk1>>hdh0","final_pt>2");
 	//  TDirectory* dir  = (TDirectory*)file->Get(dirname.c_str());
 //	TDirectory *dir =(TDirectory*) chain.Get("Histos");
 //	TH1D * residue =(TH1D*) dir->Get("h410");
@@ -102,8 +103,8 @@ void final_residue_run(){
 //	residue->SetMarkerSize(1);
 
 	//c1h->Modified();
-	c1h->SaveAs("pt_phi.eps");
-	c1h->SaveAs("pt_phi.png");
+	c1h->SaveAs("residue_c.eps");
+	c1h->SaveAs("residue_c.png");
 
 
 }

@@ -1,0 +1,10 @@
+@(#)CERN job starter $Date: 2010/06/23 14:22:16 $
+Working directory is </pool/lsf/yechen/527053212> on <lxbsu3009.cern.ch>
+
+sh: /afs/cern.ch/user/y/yechen/workspace/CMSSW_5_3_9/src/PxlTriplet/PxlTest/test/test.sh: Permission denied
+
+Job finished at Thu May  8 02:50:28 CEST 2014 on node 
+ under linux version Scientific Linux CERN SLC release 5.10 (Boron)
+
+CERN statistics: This process used approximately : 0:00:01 KSI2K hours (1 KSI2K seconds)
+                 This process corresponds to     : 0:00:05 HS06  hours (5 HS06  seconds)

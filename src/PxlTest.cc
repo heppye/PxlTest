@@ -34,7 +34,7 @@
 #include "DataFormats/METReco/interface/PFMET.h"
 #include "DataFormats/METReco/interface/PFMETFwd.h"
 #include "DataFormats/TrackReco/interface/Track.h"
-//#include "DataFormats/TrackReco/interface/TrackExtra.h"
+#include "DataFormats/TrackReco/interface/TrackExtra.h"
 #include "DataFormats/TrackReco/interface/TrackFwd.h"
 #include <DataFormats/TrackReco/interface/HitPattern.h>
 // To convert detId to subdet/layer number:
@@ -112,6 +112,10 @@ void PxlTest::beginJob()
   // h410 = fs->make<TH1D>( "h410", "PXB2 residuals #Deltax;PXB2 #Deltax [#mum];hits", 100, -150, 150 );
    newtree =fs->make<TTree>("newtree","test");
    newtree->Branch("residue",&residue,"residue/D");
+
+   newtree->Branch("residue_c",&residue_c,"residue_c/D");
+
+
    newtree->Branch("resid_disk1",&resid_disk1,"resid_disk1/D");
    newtree->Branch("resid_disk2",&resid_disk2,"resid_disk2/D");
    newtree->Branch("residue_refit",&residue_refit,"residue_refit/D");
@@ -119,6 +123,16 @@ void PxlTest::beginJob()
    newtree->Branch("final_phi",&final_phi,"final_phi/D");
    newtree->Branch("run_num",&run_num,"run_num/I");
    newtree->Branch("lumi_block",&lumi_block,"lumi_block/I");
+
+   newtree->Branch("xpx1_g",&xpx1_g,"xpx1_g/D");
+   newtree->Branch("xpy1_g",&xpy1_g,"xpy1_g/D");
+   newtree->Branch("xpz1_g",&xpz1_g,"xpz1_g/D");
+
+   newtree->Branch("xpx1_l",&xpx1_l,"xpx1_l/D");
+   newtree->Branch("xpy1_l",&xpy1_l,"xpy1_l/D");
+   newtree->Branch("xpz1_l",&xpz1_l,"xpz1_l/D");
+
+
    newtree->Branch("xpx2_g",&xpx2_g,"xpx2_g/D");
    newtree->Branch("xpy2_g",&xpy2_g,"xpy2_g/D");
    newtree->Branch("xpz2_g",&xpz2_g,"xpz2_g/D");
@@ -126,6 +140,11 @@ void PxlTest::beginJob()
    newtree->Branch("xpx2_l",&xpx2_l,"xpx2_l/D");
    newtree->Branch("xpy2_l",&xpy2_l,"xpy2_l/D");
    newtree->Branch("xpz2_l",&xpz2_l,"xpz2_l/D");
+
+   newtree->Branch("xblade",&xblade,"xblade/D");
+   newtree->Branch("xpanel",&xpanel,"xpanel/D");
+   newtree->Branch("xmodule",&xmodule,"xmodule/D");
+
    //
 }
 
@@ -513,18 +532,12 @@ void PxlTest::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup){
       double fpos1 = phi - pihalf;
 
       if( R1 >= abs(dca) ) {
-
 	 // sin(delta phi):
-
 	 double sindp = ( 0.5*kap * (R1*R1 + dca*dca) - dca ) / (R1*erd);
 	 fpos1 = phi + asin(sindp); // phi position at R1
-
 	 // sin(alpha):
-
 	 double sina = R1*kap * sqrt( 1.0 - sindp*sindp );
-
 	 // s = alpha / kappa:
-
 	 if( sina >= 1.0 )
 	    s1 = pi / kap;
 	 else{
@@ -533,11 +546,8 @@ void PxlTest::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup){
 	    else
 	       s1 = asin(sina) / kap;//always positive
 	 }
-
 	 // Check direction: limit to half-turn
-
 	 if( hkk * ( R1*R1 - dca*dca ) > erd ) s1 = pi/abs(kap) - s1; // always positive
-
       }// R1 > dca
 
       if( fpos1 > pi ) fpos1 -= twopi;
@@ -569,21 +579,14 @@ void PxlTest::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup){
 	  */
 
 	 if( PXBDetId(mydetId).layer() == 1 ) {
-
 	    double dz = zR1 - (*idet)->position().z();
-
 	    if( abs(dz) > 4.0 ) continue;
-
 	    double df = fpos1 - (*idet)->position().barePhi();//track phi at R1 vs ladder phi
-
 	    if( df > pi ) df -= twopi;
 	    else if( df < -pi ) df += twopi;
-
 	    if( abs(df)*wt > 36.0 ) continue;//coarse matching track to ladder
-
 	    // normal vector: includes alignment (varies from module to module along z on one ladder)
 	    // neighbouring ladders alternate with inward/outward orientation
-
 	    /*
 	       cout << "normal";
 	       cout << ": x " << (*idet)->surface().normalVector().x();
@@ -985,35 +988,23 @@ void PxlTest::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup){
 	 double xloc = transRecHit->localPosition().x();// 1st meas coord
 	 double yloc = transRecHit->localPosition().y();// 2nd meas coord or zero
 	 //double zloc = transRecHit->localPosition().z();// up, always zero
-
 	 double vxloc = transRecHit->localPositionError().xx();//covariance
 	 double vyloc = transRecHit->localPositionError().yy();//covariance
-
 	 double gX = transRecHit->globalPosition().x();
 	 double gY = transRecHit->globalPosition().y();
 	 double gZ = transRecHit->globalPosition().z();
-
 	 if( transRecHit->canImproveWithTrack() ) {//use z from track to apply alignment
-
 	    //if( idbg ) cout << "  try to improve\n";
-
 	    TrajectoryStateOnSurface propTSOS = thePropagator->propagate( initialTSOS, transRecHit->det()->surface() );
-
 	    if( propTSOS.isValid() ){
-
 	       //if( idbg ) cout << "  have propTSOS\n";
-
 	       TransientTrackingRecHit::RecHitPointer preciseHit = transRecHit->clone(propTSOS);
-
 	       //if( idbg ) cout << "  have preciseHit\n";
-
 	       xloc = preciseHit->localPosition().x();// 1st meas coord
 	       yloc = preciseHit->localPosition().y();// 2nd meas coord or zero
 	       // zloc = preciseHit->localPosition().z();// up, always zero
-
 	       vxloc = preciseHit->localPositionError().xx();//covariance
 	       vyloc = preciseHit->localPositionError().yy();//covariance
-
 	       if( idbg ) {
 		  cout << "  improved hit in " << subDet;
 		  cout << setprecision(4);
@@ -1046,7 +1037,6 @@ void PxlTest::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup){
 	 if( subDet == PixelSubdetector::PixelBarrel ||
 	       subDet == StripSubdetector::TIB ||
 	       subDet == StripSubdetector::TOB ) { // barrel
-
 	    //	h066->Fill( gX, gY );
 	 }
 
@@ -1056,42 +1046,17 @@ void PxlTest::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup){
 	 }
 
 	 double phiN = transRecHit->det()->surface().normalVector().barePhi();//normal vector
-
 	 double xmid = transRecHit->det()->position().x();
 	 double ymid = transRecHit->det()->position().y();
 
 	 // PXB:
 
 	 if( subDet == PixelSubdetector::PixelBarrel ) {
-
 	    double xpix = fmod( xloc+0.82, 0.01 );// xpix = 0..0.01
-
-	    //	h080->Fill( xpix*1E4 );
-	    //	if( nrow == 2 )
-	    //	  h081->Fill( xpix*1E4 );
-	    //	else
-	    //	  h082->Fill( xpix*1E4 );
-	    //
-	    //	if( nrow == 2 ) h083->Fill( xpix*1E4, etaX );
-	    //
 	    double df = phiN - gF;//normal vector vs position vector: inwards or outwards
-
 	    // take care of cut at +180/-180:
-
 	    if( df > pi ) df -= twopi;
 	    else if( df < -pi ) df += twopi;
-
-	    // outward/inward have different Lorentz drift:
-
-	    //	if( nrow == 2 ) {
-	    //	  if( abs(df) < pihalf ) // outward
-	    //	    h084->Fill( xpix*1E4, etaX );
-	    //	  else // inward, identical
-	    //	    h085->Fill( xpix*1E4, etaX ); // identical
-	    //	}
-	    //
-	    //	if( nrow == 1 ) h086->Fill( xloc );
-	    //	if( nrow == 2 ) h087->Fill( xloc );
 
 	    int ilay = PXBDetId(detId).layer();
 	    int ilad = PXBDetId(detId).ladder();
@@ -1143,14 +1108,10 @@ void PxlTest::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup){
 	       else if( ilad == 16 ) halfmod = 1;
 
 	       //	  if( !halfmod ) h107->Fill( xloc, yloc ); // hit within one module
-
 	       // track impact parameter to beam:
-
-
 	       // my crossings:
 
 	       for( int icrss = 0; icrss < ncrss; ++icrss ){
-
 		  double fcrss = atan2( ycrss[icrss], xcrss[icrss] );
 		  double df = gF - fcrss;
 		  if( df > pi ) df -= twopi;
@@ -1174,14 +1135,12 @@ void PxlTest::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup){
 	 if( subDet == PixelSubdetector::PixelEndcap) {
 
 	    int idisk = PXFDetId(detId).disk();
-
 	    int iblade = PXFDetId(detId).blade();
 	    int ipanel =  PXFDetId(detId).panel();
 	    int imodule =   PXFDetId(detId).module();
 
 
 	    if( idisk == 1 ){
-
 	       n2++;
 	       xPXB2 = gX; // precise hit in CMS global coordinates
 	       yPXB2 = gY;
@@ -1203,9 +1162,13 @@ void PxlTest::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup){
 	       zmin2 = ymin;
 	       zmax2 = ymax;
 
-	       xpx2_g=xPXB2;
-	       xpy2_g=yPXB2;
-	       xpz2_g=zPXB2;
+	       xpx1_g=xPXB2;
+	       xpy1_g=yPXB2;
+	       xpz1_g=zPXB2;
+
+               xblade = iblade;
+               xpanel = ipanel;
+               xmodule = imodule;
 
 	       det2 = transRecHit->det();
 
@@ -1228,6 +1191,12 @@ void PxlTest::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup){
 	       nrow3 = nrow;
 	       etaX3 = etaX;
 	       cogp3 = cogp;
+
+
+	       xpx2_g=xPXB2;
+	       xpy2_g=yPXB2;
+	       xpz2_g=zPXB2;
+
 
 	    }//PXB3
 
@@ -1252,13 +1221,9 @@ void PxlTest::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup){
       std::vector<Trajectory> refitTrajectoryCollection = theFitter->fit( seed, coTTRHvec, initialTSOS );
 
       if( refitTrajectoryCollection.size() > 0 ) { // should be either 0 or 1            
-
 	 const Trajectory& refitTrajectory = refitTrajectoryCollection.front();
-
 	 // Trajectory.measurements:
-
 	 Trajectory::DataContainer refitTMs = refitTrajectory.measurements();
-
 	 if( idbg ) {
 	    cout << "  refitTrajectory has " << refitTMs.size() <<" hits in subdet";
 	 }
@@ -1383,23 +1348,10 @@ void PxlTest::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup){
 	    double phiinc = alf_inc;
 	    if( phiinc > pihalf ) phiinc -= pi;
 	    else if( phiinc < -pihalf ) phiinc += pi;
-
 	    if( bet_inc > pihalf ) bet_inc -= pi;
 	    else if( bet_inc < -pihalf ) bet_inc += pi;
 
 	    //if( subDet == 1 && idbg ){//1=PXB
-	    if( subDet == 4 && idbg ){//4=TID
-
-	       cout << setprecision(1);
-	       cout << "  combinedStateResid = " << dx*1E4 << " um";
-	       cout << ", eh = " << sqrt(vxh)*1E4 << " um";
-	       cout << ", et = " << sqrt(vxt)*1E4 << " um";
-	       cout << ", dy = " << dy*1E4 << " um";
-	       cout << setprecision(4);
-	       cout << ", track at x " << combinedPredictedState.localPosition().x();
-	       cout << ", y " << combinedPredictedState.localPosition().y();
-	       cout << endl;
-	    }
 
 	    // use Topology. no effect in PXB, essential in TID, TEC
 
@@ -1499,9 +1451,9 @@ void PxlTest::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup){
 		  yPXB2 = gY;
 		  zPXB2 = gZ;
 
-		  xpx2_l=lX;
-		  xpy2_l=lY;
-		  xpz2_l=lZ;
+		  xpx1_l=lX;
+		  xpy1_l=lY;
+		  xpz1_l=lZ;
 		  //		  cout<<"gx="<<gX<<"  gy="<<gY<<"   gz="<<gZ<<endl;
 
 
@@ -1511,6 +1463,13 @@ void PxlTest::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup){
 		  xPXB3 = gX;
 		  yPXB3 = gY;
 		  zPXB3 = gZ;
+
+		  xpx2_l=lX;
+		  xpy2_l=lY;
+		  xpz2_l=lZ;
+
+
+
 	       }
 
 	    }
@@ -1563,11 +1522,8 @@ void PxlTest::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup){
 	    // re-fit without PXB2:
 
 	    std::vector<Trajectory> refitTrajectoryVec2 = theFitter->fit( seed, nyTTRHvec, initialTSOS );
-
 	    if( refitTrajectoryVec2.size() > 0 ) { // should be either 0 or 1            
-
 	       const Trajectory& refitTrajectory2 = refitTrajectoryVec2.front();
-
 	       // Trajectory.measurements:
 
 	       Trajectory::DataContainer refitTMvec2 = refitTrajectory2.measurements();
@@ -1814,18 +1770,46 @@ void PxlTest::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup){
 	       else if( ilad2 == 24 ) halfmod = 1;
 	       else if( ilad2 == 25 ) halfmod = 1;
 
+	       double theta_ideal0= (-rho*rho+x0*x0+y0*y0+r1*r1)/(2*r1*sqrt(x0*x0+y0*y0));
+	       double phi_circle = atan2(y0,x0);
+	       double theta_ideal= acos(theta_ideal0)+phi_circle;
+	       //              double theta_ideal = acos((rho*rho+x0*x0+y0*y0-r1*r1)/(2*sqrt(2)*rho));
+	       //               double theta_ideal = acos((rho*rho+x0*x0+y0*y0-r1*r1)/(2*sqrt(2)*rho))+pi/4;
+	       double x_ideal=r1*cos(theta_ideal);
+	       double y_ideal=r1*sin(theta_ideal);
+
+	       if (!((x_ideal/xPXB1)>0)&&((y_ideal/xPXB1)>0)) continue;
+
+	       // 
+	       //               x_ideal=r1*cos(theta_ideal);
+	       //               y_ideal=r1*sin(theta_ideal);
+	       //              cout<<"theta_ideal0="<<theta_ideal0<<"   theta_ideal="<<theta_ideal<<endl;                   
+
+	       //               cout<<"x_ideal="<<x_ideal<<"   y_ideal="<<y_ideal<<endl;
+
+	       Surface::GlobalPoint gp_ideal( x_ideal, y_ideal, uz2 );
+	       Surface::LocalPoint lp_ideal = det2->toLocal( gp_ideal );
+
+	       double  xl_ideal= lp_ideal.x();
+	       double yl_ideal= lp_ideal.y();
+                double unit=1;
+                if( kap2>=0)  unit=1;
+                if(kap2<=0)  unit=-1;
+
+	       residue_c= unit* sqrt((xPXB1-xl_ideal)*(xPXB1-xl_ideal)+(yPXB1-yl_ideal)*(yPXB1-yl_ideal));
+
 
 	       residue=dca2*1E4 ;
 	       final_pt=pt;
 	       final_phi=phi;
 
-//	       if( pt > 4 ) {
-//		  //
-//		  //	  h308->Fill( bb/aa ); // lever arm
-//		  //	  h409->Fill( f2*wt, phiinc*wt );
-//		  h410->Fill( dca2*1E4 );
-//		  //
-//	       } // pt > 4
+	       //	       if( pt > 4 ) {
+	       //		  //
+	       //		  //	  h308->Fill( bb/aa ); // lever arm
+	       //		  //	  h409->Fill( f2*wt, phiinc*wt );
+	       //		  h410->Fill( dca2*1E4 );
+	       //		  //
+	       //	       } // pt > 4
 
 	       newtree->Fill();
 
@@ -1834,100 +1818,100 @@ void PxlTest::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup){
 
 
 
-//	    if( pt > 4 ) {
+	    //	    if( pt > 4 ) {
 
-	       // loop over hits on this track:
+	    // loop over hits on this track:
 
-	       for( vector<TransientTrackingRecHit::RecHitPointer>::iterator jTTRH = myTTRHvec.begin();
-		     jTTRH != myTTRHvec.end(); ++jTTRH ) {
+	    for( vector<TransientTrackingRecHit::RecHitPointer>::iterator jTTRH = myTTRHvec.begin();
+		  jTTRH != myTTRHvec.end(); ++jTTRH ) {
 
-		  if( ! (*jTTRH)->hit()->isValid() ) continue;
+	       if( ! (*jTTRH)->hit()->isValid() ) continue;
 
-		  Surface::GlobalPoint gp = (*jTTRH)->globalPosition();
+	       Surface::GlobalPoint gp = (*jTTRH)->globalPosition();
 
-		  Trajectory::RecHitContainer nyTTRHvec; // for fit
+	       Trajectory::RecHitContainer nyTTRHvec; // for fit
 
-		  for( vector<TransientTrackingRecHit::RecHitPointer>::iterator iTTRH = myTTRHvec.begin();
-			iTTRH != myTTRHvec.end(); ++iTTRH ) {
+	       for( vector<TransientTrackingRecHit::RecHitPointer>::iterator iTTRH = myTTRHvec.begin();
+		     iTTRH != myTTRHvec.end(); ++iTTRH ) {
 
-		     if( iTTRH == jTTRH ) continue;//skip hit i
+		  if( iTTRH == jTTRH ) continue;//skip hit i
 
-		     nyTTRHvec.push_back( *iTTRH );//copy all others
+		  nyTTRHvec.push_back( *iTTRH );//copy all others
 
-		  }//copy
+	       }//copy
 
-		  // re-fit without hit i:
+	       // re-fit without hit i:
 
-		  std::vector<Trajectory> refitTrajectoryVec2 = theFitter->fit( seed, nyTTRHvec, initialTSOS );
+	       std::vector<Trajectory> refitTrajectoryVec2 = theFitter->fit( seed, nyTTRHvec, initialTSOS );
 
-		  if( refitTrajectoryVec2.size() > 0 ) { // should be either 0 or 1
+	       if( refitTrajectoryVec2.size() > 0 ) { // should be either 0 or 1
 
-		     const Trajectory& refitTrajectory2 = refitTrajectoryVec2.front();
+		  const Trajectory& refitTrajectory2 = refitTrajectoryVec2.front();
 
-		     // Trajectory.measurements:
+		  // Trajectory.measurements:
 
-		     const TrajectoryMeasurement closestTM = refitTrajectory2.closestMeasurement( gp );
+		  const TrajectoryMeasurement closestTM = refitTrajectory2.closestMeasurement( gp );
 
-		     TrajectoryStateOnSurface closestTSOS = closestTM.updatedState();
-
-
-		     TrajectoryStateOnSurface propTSOS = thePropagator->propagate( closestTSOS, (*jTTRH)->det()->surface() );
-
-		     if( propTSOS.isValid() ){
-
-			const Topology* theTopology = &( (*jTTRH)->detUnit()->topology() );
-
-			// MeasurementPoint [pitch] (like channel number)
-
-			MeasurementPoint hitMeasurement = theTopology->measurementPosition( (*jTTRH)->localPosition() );
-
-			// TID and TEC have trapezoidal detectors:
-			// translation from channel number into local x depends on local y
-			// track prediction has local x,y => can convert into proper channel number MeasurementPoint:
-
-			MeasurementPoint predictedPosition = theTopology->measurementPosition( propTSOS.localPosition() );
-
-			double resid = hitMeasurement.x() - predictedPosition.x();//[pitch]
-
-			DetId detId = (*jTTRH)->hit()->geographicalId();
-			uint32_t subDet = detId.subdetId();
-
-			double xptch;
-			//double yptch;
-
-			if( subDet <  3 ){//1,2=pixel
-			   PixelTopology & pixelTopol = (PixelTopology&) (*jTTRH)->detUnit()->topology();
-			   xptch = pixelTopol.pitch().first;
-			   //yptch = pixelTopol.pitch().second;
-			}
-			else {//strip
-			   StripTopology & stripTopol = (StripTopology&) (*jTTRH)->detUnit()->topology();
-			   xptch = stripTopol.localPitch( propTSOS.localPosition() );
-			   //yptch = stripTopol.localStripLength( propTSOS.localPosition() );
-			}
-
-			resid = resid * xptch;//[cm]
-
-			if( subDet == PixelSubdetector::PixelEndcap ) {
-
-			   if( PXFDetId(detId).disk() == 1 ) {
-			      //                u110->Fill( resid*1E4 );
-			      resid_disk1=resid*1E4;
-			   }//layer
-
-			   if( PXFDetId(detId).disk() == 2 ) {
-			      resid_disk2=resid*1E4;
-			      //              u120->Fill( resid*1E4 );
-			   }//layer
+		  TrajectoryStateOnSurface closestTSOS = closestTM.updatedState();
 
 
-			}//PXB
+		  TrajectoryStateOnSurface propTSOS = thePropagator->propagate( closestTSOS, (*jTTRH)->det()->surface() );
 
+		  if( propTSOS.isValid() ){
 
+		     const Topology* theTopology = &( (*jTTRH)->detUnit()->topology() );
+
+		     // MeasurementPoint [pitch] (like channel number)
+
+		     MeasurementPoint hitMeasurement = theTopology->measurementPosition( (*jTTRH)->localPosition() );
+
+		     // TID and TEC have trapezoidal detectors:
+		     // translation from channel number into local x depends on local y
+		     // track prediction has local x,y => can convert into proper channel number MeasurementPoint:
+
+		     MeasurementPoint predictedPosition = theTopology->measurementPosition( propTSOS.localPosition() );
+
+		     double resid = hitMeasurement.x() - predictedPosition.x();//[pitch]
+
+		     DetId detId = (*jTTRH)->hit()->geographicalId();
+		     uint32_t subDet = detId.subdetId();
+
+		     double xptch;
+		     //double yptch;
+
+		     if( subDet <  3 ){//1,2=pixel
+			PixelTopology & pixelTopol = (PixelTopology&) (*jTTRH)->detUnit()->topology();
+			xptch = pixelTopol.pitch().first;
+			//yptch = pixelTopol.pitch().second;
 		     }
-		  }
+		     else {//strip
+			StripTopology & stripTopol = (StripTopology&) (*jTTRH)->detUnit()->topology();
+			xptch = stripTopol.localPitch( propTSOS.localPosition() );
+			//yptch = stripTopol.localStripLength( propTSOS.localPosition() );
+		     }
 
+		     resid = resid * xptch;//[cm]
+
+		     if( subDet == PixelSubdetector::PixelEndcap ) {
+
+			if( PXFDetId(detId).disk() == 1 ) {
+			   //                u110->Fill( resid*1E4 );
+			   resid_disk1=resid*1E4;
+			}//layer
+
+			if( PXFDetId(detId).disk() == 2 ) {
+			   resid_disk2=resid*1E4;
+			   //              u120->Fill( resid*1E4 );
+			}//layer
+
+
+		     }//PXB
+
+
+		  }
 	       }
+
+	    }
 
 	    //}
 
@@ -1998,7 +1982,6 @@ void PxlTest::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup){
 	       double dca2 = sa / ( 1 + sqrt(1 + rinv2*sa) );// distance to hit 2
 	       double ud = 1 + rinv2*udca;
 	       double phi2 = atan2( -rinv2*xPXB2 + ud*sinphi, rinv2*yPXB2 + ud*cosphi );//direction
-
 	       double phiinc = phi2 - phiN2;//angle of incidence in rphi w.r.t. normal vector
 
 	       // phiN alternates inward/outward

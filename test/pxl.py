@@ -23,16 +23,16 @@ process.load('RecoTracker.TransientTrackingRecHit.TTRHBuilderWithTemplate_cfi')
 process.load("RecoTracker.TrackProducer.TrackRefitters_cff")
 # Get beamspot from DB
 process.load("RecoVertex.BeamSpotProducer.BeamSpot_cfi")
-process.maxEvents = cms.untracked.PSet( input = cms.untracked.int32(10) )
+process.maxEvents = cms.untracked.PSet( input = cms.untracked.int32(100) )
 #from CalibTracker.Configuration.Common.PoolDBESSource_cfi import poolDBESSource
 import CalibTracker.Configuration.Common.PoolDBESSource_cfi
 
 process.source = cms.Source("PoolSource",
 	fileNames = cms.untracked.vstring(
 	#	'/store/data/Run2012D/JetHT/RECO/PromptReco-v1/000/208/686/FE77D054-6241-E211-9BF9-003048D37580.root'
-                 #'file:/afs/cern.ch/user/y/yechen/workspace/temp/2012D_JetHT.root'
+                 'file:/afs/cern.ch/user/y/yechen/workspace/temp/2012D_JetHT.root'
 
-                 'file:/afs/cern.ch/user/y/yechen/workspace/temp/2012A_AOD.root'
+                 #'file:/afs/cern.ch/user/y/yechen/workspace/temp/2012A_AOD.root'
 
 	)
 )

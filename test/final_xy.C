@@ -41,8 +41,32 @@ void final_xy(){
 	TChain * chain = new TChain("newtree","");
         chain->Add("./job.root/Histos/newtree");  
         TH2D *hdh0 = new TH2D("hdh0", "hdh0", 400,-15,15,400,-15,15);
+        TH2D *hdh1 = new TH2D("hdh1", "hdh1", 400,-15,15,400,-15,15);
+        TH2D *hdh2 = new TH2D("hdh2", "hdh2", 400,-150,150,400,-150,150);
+        TH2D *hdh3 = new TH2D("hdh3", "hdh3", 400,-1500,150,400,-150,150);
+        chain->Draw("xpx1_l:xpy1_l>>hdh0","xblade==6||xblade==20");
+        chain->Draw("xpx2_l:xpy2_l>>hdh1","xblade==6||xblade==20");
 
-        chain->Draw("xpx2_l:xpy2_l>>hdh0");
+        chain->Draw("xpx1_g:xpy1_g>>hdh2","xblade==6||xblade==20");
+        chain->Draw("10*xpx2_g:10*xpy2_g>>hdh3","xblade==6||xblade==20");
+
+
+
+        hdh0->Draw();
+	c1h->SaveAs("hdh0.eps");
+	c1h->SaveAs("hdh0.png");
+
+        hdh1->Draw();
+	c1h->SaveAs("hdh1.eps");
+	c1h->SaveAs("hdh1.png");
+  
+
+
+        hdh2->Draw();
+        hdh3->Draw("same");
+	c1h->SaveAs("xy.eps");
+	c1h->SaveAs("xy.png");
+ 
 	//  TDirectory* dir  = (TDirectory*)file->Get(dirname.c_str());
 //	TDirectory *dir =(TDirectory*) chain.Get("Histos");
 //	TH1D * residue =(TH1D*) dir->Get("h410");
@@ -102,8 +126,6 @@ void final_xy(){
 //	residue->SetMarkerSize(1);
 
 	//c1h->Modified();
-	c1h->SaveAs("x_y.eps");
-	c1h->SaveAs("x_y.png");
 
 
 }

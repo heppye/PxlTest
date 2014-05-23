@@ -45,7 +45,7 @@
 #include "DataFormats/METReco/interface/PFMETFwd.h"
 
 #include "DataFormats/TrackReco/interface/Track.h"
-//#include "DataFormats/TrackReco/interface/TrackExtra.h"
+#include "DataFormats/TrackReco/interface/TrackExtra.h"
 #include "DataFormats/TrackReco/interface/TrackFwd.h"
 
 #include <DataFormats/TrackReco/interface/HitPattern.h>
@@ -131,10 +131,21 @@ private:
   std::string proccessName_;
   TTree * newtree;
 
+  double xpx1_g,xpy1_g,xpz1_g;
+  double xpx1_l,xpy1_l,xpz1_l; 
+
   double xpx2_g,xpy2_g,xpz2_g;
   double xpx2_l,xpy2_l,xpz2_l; 
 
+  double xblade;
+  double xpanel;
+  double xmodule;
+
+
   double  residue;
+
+  double  residue_c;
+
 
   double resid_disk1;
   double resid_disk2;
