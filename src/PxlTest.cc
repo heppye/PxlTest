@@ -113,7 +113,11 @@ void PxlTest::beginJob()
    newtree =fs->make<TTree>("newtree","test");
    newtree->Branch("residue",&residue,"residue/D");
 
-   newtree->Branch("residue_c",&residue_c,"residue_c/D");
+   newtree->Branch("residue_x",&residue_x,"residue_x/D");
+   newtree->Branch("residue_y",&residue_y,"residue_y/D");
+
+   newtree->Branch("residue_x_local",&residue_x_local,"residue_x_local/D");
+   newtree->Branch("residue_y_local",&residue_y_local,"residue_y_local/D");
 
 
    newtree->Branch("resid_disk1",&resid_disk1,"resid_disk1/D");
@@ -197,7 +201,8 @@ void PxlTest::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup){
 
    run_num=iEvent.run();
    lumi_block=iEvent.luminosityBlock();   
-   //--------------------------------------------------------------------
+ 
+  //--------------------------------------------------------------------
    // beam spot:
 
    edm::Handle<reco::BeamSpot> rbs;
@@ -1148,8 +1153,13 @@ void PxlTest::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup){
 	       uPXB2 = xloc; // precise hit in local coordinates (w.r.t. sensor center)
 	       vPXB2 = yloc;
 	       phiN2 = phiN;
-	       ePXB2 = sqrt( vxloc );
-	       fPXB2 = sqrt( vyloc );
+//	       ePXB2 = sqrt( vxloc );
+//	       fPXB2 = sqrt( vyloc );
+
+	       ePXB2 =  vxloc ;
+	       fPXB2 =  vyloc ;
+
+
 	       clch2 = clch; // cluster charge [e]
 	       ncol2 = ncol;
 	       nrow2 = nrow;
@@ -1612,6 +1622,7 @@ void PxlTest::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup){
 	       // Point 1 must be in the inner layer, 3 in the outer:
 
 	       double r1 = sqrt( xPXB1*xPXB1 + yPXB1*yPXB1 );
+               double r2=  sqrt( xPXB2*xPXB2+yPXB2*yPXB2);
 	       double r3 = sqrt( xPXB3*xPXB3 + yPXB3*yPXB3 );
 
 	       if( r3-r1 < 2.0 ) cout << "warn r1 = " << r1 << ", r3 = " << r3 << endl;
@@ -1770,15 +1781,30 @@ void PxlTest::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup){
 	       else if( ilad2 == 24 ) halfmod = 1;
 	       else if( ilad2 == 25 ) halfmod = 1;
 
-	       double theta_ideal0= (-rho*rho+x0*x0+y0*y0+r1*r1)/(2*r1*sqrt(x0*x0+y0*y0));
-	       double phi_circle = atan2(y0,x0);
-	       double theta_ideal= acos(theta_ideal0)+phi_circle;
+//	       double theta_ideal0= (-rho*rho+x0*x0+y0*y0+r2*r2)/(2*r2*sqrt(x0*x0+y0*y0));
+//	       double phi_circle = atan2(y0,x0);
+//	       double theta_ideal= acos(theta_ideal0)+phi_circle;
+  //             double L=sqrt(1+((y0-yPXB2)*(y0-yPXB2))/((x0-xPXB2)*(x0-xPXB2)))*rho;
+  //             double theta_1=acos(rho/L);
+  //             double theta_2= asin((yPXB2*x0-y0*xPXB2)/((xPXB2-x0)*L));
+  //             double theta_ideal= theta_1+theta_2;
+
+              double kk=(y0-yPXB2)/(x0-xPXB2);
+              double kb = (yPXB2*x0-y0*xPXB2)/(x0-xPXB2);
+
+              double phi_ideal = atan(kk);
+              double phi2_ideal = asin((x0*kk+kb-y0)/(rho*sqrt(1+kk*kk)));
+              double theta_ideal = phi_ideal+phi2_ideal; 
+
+
+                    //cout<<"y0="<<y0<<"  "<<"x0="<<x0<<endl;
+                    //cout<<"yPXB2="<<yPXB2<<"  "<<"xPXB2="<<xPXB2<<endl;
 	       //              double theta_ideal = acos((rho*rho+x0*x0+y0*y0-r1*r1)/(2*sqrt(2)*rho));
 	       //               double theta_ideal = acos((rho*rho+x0*x0+y0*y0-r1*r1)/(2*sqrt(2)*rho))+pi/4;
-	       double x_ideal=r1*cos(theta_ideal);
-	       double y_ideal=r1*sin(theta_ideal);
+	       double x_ideal=rho*cos(theta_ideal)+x0;
+	       double y_ideal=rho*sin(theta_ideal)+y0;
 
-	       if (!((x_ideal/xPXB1)>0)&&((y_ideal/xPXB1)>0)) continue;
+	       if (!((x_ideal/xPXB2)>0)&&((y_ideal/xPXB2)>0)) continue;
 
 	       // 
 	       //               x_ideal=r1*cos(theta_ideal);
@@ -1790,15 +1816,20 @@ void PxlTest::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup){
 	       Surface::GlobalPoint gp_ideal( x_ideal, y_ideal, uz2 );
 	       Surface::LocalPoint lp_ideal = det2->toLocal( gp_ideal );
 
-	       double  xl_ideal= lp_ideal.x();
+	       double xl_ideal= lp_ideal.x();
 	       double yl_ideal= lp_ideal.y();
-                double unit=1;
-                if( kap2>=0)  unit=1;
-                if(kap2<=0)  unit=-1;
 
-	       residue_c= unit* sqrt((xPXB1-xl_ideal)*(xPXB1-xl_ideal)+(yPXB1-yl_ideal)*(yPXB1-yl_ideal));
+               residue_x_local=ePXB2;
 
+               residue_y_local=fPXB2;
+               double unit=1;
+               // if( kap2>=0)  unit=1;
+              // if(kap2<=0)  continue;
 
+	       //residue_c= unit* sqrt((xPXB1-xl_ideal)*(xPXB1-xl_ideal)+(yPXB1-yl_ideal)*(yPXB1-yl_ideal));
+
+	       residue_x= xPXB2-xl_ideal;
+	       residue_y= yPXB2-yl_ideal;
 	       residue=dca2*1E4 ;
 	       final_pt=pt;
 	       final_phi=phi;
