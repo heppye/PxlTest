@@ -13,7 +13,8 @@ process.load("Configuration.StandardSequences.FrontierConditions_GlobalTag_cff")
 
 # new tracker alignment summer 2011:
 #
-process.GlobalTag.globaltag = 'FT_R_53_V21::All'
+#process.GlobalTag.globaltag = 'FT_R_53_V21::All'
+process.GlobalTag.globaltag = 'START53_V19G::All'
 if not "@GLOBALTAG@".startswith('@'):
 	process.GlobalTag.globaltag = '@GLOBALTAG@'
 
@@ -23,15 +24,15 @@ process.load('RecoTracker.TransientTrackingRecHit.TTRHBuilderWithTemplate_cfi')
 process.load("RecoTracker.TrackProducer.TrackRefitters_cff")
 # Get beamspot from DB
 process.load("RecoVertex.BeamSpotProducer.BeamSpot_cfi")
-process.maxEvents = cms.untracked.PSet( input = cms.untracked.int32(100) )
+process.maxEvents = cms.untracked.PSet( input = cms.untracked.int32(5000) )
 #from CalibTracker.Configuration.Common.PoolDBESSource_cfi import poolDBESSource
 import CalibTracker.Configuration.Common.PoolDBESSource_cfi
 
 process.source = cms.Source("PoolSource",
 	fileNames = cms.untracked.vstring(
 	#	'/store/data/Run2012D/JetHT/RECO/PromptReco-v1/000/208/686/FE77D054-6241-E211-9BF9-003048D37580.root'
-                 'file:/afs/cern.ch/user/y/yechen/workspace/temp/2012D_JetHT.root'
-
+               'file:/afs/cern.ch/user/y/yechen/workspace/temp/2012D_JetHT.root'
+#                 'file:/afs/cern.ch/user/y/yechen/workspace/temp/MinBias_GEN-SIM-RECO.root'
                  #'file:/afs/cern.ch/user/y/yechen/workspace/temp/2012A_AOD.root'
 
 	)
