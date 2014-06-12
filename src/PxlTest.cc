@@ -1796,19 +1796,24 @@ void PxlTest::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup){
               double phi2_ideal = asin((x0*kk+kb-y0)/(rho*sqrt(1+kk*kk)));
               double theta_ideal = phi_ideal+phi2_ideal; 
 
-
+               int c_unit=1;
                     //cout<<"y0="<<y0<<"  "<<"x0="<<x0<<endl;
                     //cout<<"yPXB2="<<yPXB2<<"  "<<"xPXB2="<<xPXB2<<endl;
 	       //              double theta_ideal = acos((rho*rho+x0*x0+y0*y0-r1*r1)/(2*sqrt(2)*rho));
 	       //               double theta_ideal = acos((rho*rho+x0*x0+y0*y0-r1*r1)/(2*sqrt(2)*rho))+pi/4;
-	       double x_ideal=rho*cos(theta_ideal)+x0;
-	       double y_ideal=rho*sin(theta_ideal)+y0;
 
-	       if (!((x_ideal/xPXB2)>0)&&((y_ideal/xPXB2)>0)) continue;
 
-	       // 
-	       //               x_ideal=r1*cos(theta_ideal);
-	       //               y_ideal=r1*sin(theta_ideal);
+	       double x_ideal;
+	       double y_ideal;
+
+               x_ideal=rho*cos(theta_ideal)+x0;
+               y_ideal=rho*sin(theta_ideal)+y0;
+
+	       if (!(((x_ideal-x0)/(xPXB2-x0)>0)&&((y_ideal-y0)/(yPXB2-y0)>0))) continue; 
+//	       
+//	                    x_ideal=-rho*cos(theta_ideal)+x0;
+//	                    y_ideal=-rho*sin(theta_ideal)+y0;
+//                 }
 	       //              cout<<"theta_ideal0="<<theta_ideal0<<"   theta_ideal="<<theta_ideal<<endl;                   
 
 	       //               cout<<"x_ideal="<<x_ideal<<"   y_ideal="<<y_ideal<<endl;
